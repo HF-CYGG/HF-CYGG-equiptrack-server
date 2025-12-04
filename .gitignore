@@ -1,0 +1,11 @@
+node_modules
+.venv
+.env
+dist
+data
+logs
+uploads
+coverage
+*.log
+*.zip
+temp_check
