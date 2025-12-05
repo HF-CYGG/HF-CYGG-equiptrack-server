@@ -137,11 +137,48 @@ api.get("/items", async (req, res, next) => {
     const userRole = ctx?.role as UserRole;
     
     let departmentId = ctx?.departmentId;
-    // Super Admin can filter by department via query param
-    if (userRole === "超级管理员" && req.query.departmentId) {
+    // Allow filtering by department for ALL users (Cross-department feature)
+    if (req.query.departmentId) {
       departmentId = req.query.departmentId as string;
-    } else if (userRole === "超级管理员" && !req.query.departmentId) {
-      departmentId = undefined;
+    } else if (req.query.showAll === "true" || userRole === "超级管理员") {
+        // Explicitly show all or if super admin requests without specific ID
+        departmentId = undefined;
+    }
+    // If no query param and not explicitly showing all, default to user's department (current behavior preserved for initial load if needed)
+    // However, user wants "All users can cross-department". 
+    // So we should probably default to undefined (All) if the client logic handles the filtering?
+    // Or let the client decide. 
+    // Let's stick to: Use query param if present. If not, default to user's department (unless Super Admin).
+    // BUT, if the user selects "All Departments" in the UI, we need a way to say "No Filter".
+    // The client can send a specific flag or just rely on the filter logic.
+    // Let's allow overriding.
+    
+    if (req.query.departmentId) {
+        departmentId = req.query.departmentId as string;
+    }
+    // If the client sends departmentId="", it means "All" (if we treat empty string as no filter)
+    // But typically ID is non-empty.
+    
+    // Refined Logic:
+    // 1. If departmentId query param is provided, use it.
+    // 2. If not provided, use user's department (legacy/default).
+    // 3. BUT if user wants to see ALL, they might not send departmentId.
+    // We need a way to distinguish "Default to my dept" vs "Show me everything".
+    // Let's assume if the client is updated, it will send departmentId for specific view.
+    // If it wants all, maybe it sends a special value or we add a "scope=global" param?
+    // Simplest: If `departmentId` query param is present, use it. 
+    // If `departmentId` is NOT present, default to user's department (for safety/compatibility).
+    // To view ALL, the client should send `departmentId=all` or similar?
+    // Or just: "If user selects 'All', client sends no departmentId, BUT we need to bypass the default."
+    
+    // Let's change line 139 to undefined initially if we want to support global view by default?
+    // No, safer to default to ctx.departmentId.
+    // If client wants "All", it can send `departmentId=all` and we handle it? 
+    // Or just allow `departmentId` param to override.
+    
+    if (req.query.departmentId) {
+        departmentId = req.query.departmentId as string;
+        if (departmentId === "all") departmentId = undefined;
     }
 
     const allAvailable = req.query.allAvailable === "true";

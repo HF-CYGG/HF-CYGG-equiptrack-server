@@ -124,13 +124,10 @@ export function filterItems(
     result = result.filter((i) => i.availableQuantity > 0);
     return result;
   }
-  if (opts.userRole === "超级管理员") {
-    if (opts.departmentId) result = result.filter((i) => i.departmentId === opts.departmentId);
-    return result;
+  if (opts.departmentId) {
+    result = result.filter((i) => i.departmentId === opts.departmentId);
   }
-  if (!opts.departmentId) {
-    // 非超级管理员必须提供部门
-    throw Object.assign(new Error("departmentId is required for this role"), { status: 400 });
-  }
-  return result.filter((i) => i.departmentId === opts.departmentId);
+  
+  // Allow all users to view all items if no departmentId is specified (Cross-department feature)
+  return result;
 }
