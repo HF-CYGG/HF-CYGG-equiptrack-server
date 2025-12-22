@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ master ]
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -22,7 +26,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and (optionally) push image
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image to Docker Hub and GHCR
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -31,3 +42,5 @@ jobs:
           tags: |
             yemiao351/equiptrack:latest
             yemiao351/equiptrack:${{ github.sha }}
+            ghcr.io/HF-CYGG/equiptrack-server:latest
+            ghcr.io/HF-CYGG/equiptrack-server:${{ github.sha }}
