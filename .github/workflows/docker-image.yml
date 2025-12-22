@@ -42,5 +42,5 @@ jobs:
           tags: |
             yemiao351/equiptrack:latest
             yemiao351/equiptrack:${{ github.sha }}
-            ghcr.io/HF-CYGG/equiptrack-server:latest
-            ghcr.io/HF-CYGG/equiptrack-server:${{ github.sha }}
+            ghcr.io/hf-cygg/equiptrack-server:latest
+            ghcr.io/hf-cygg/equiptrack-server:${{ github.sha }}
