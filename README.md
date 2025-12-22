@@ -81,15 +81,62 @@ npm start
 
 ## 🐳 Docker 部署
 
-本项目包含 `Dockerfile`，支持容器化部署。
+本项目包含 `Dockerfile`，并通过 GitHub Actions 自动构建并推送镜像到 Docker Hub 仓库 `yemiao351/equiptrack`。
 
-### 构建镜像
+### 方式一：使用官方镜像 + docker-compose（一键部署，推荐）
+
+在目标服务器上：
+
+1. 创建数据目录：
+
+    ```bash
+    sudo mkdir -p /opt/equiptrack/data
+    sudo mkdir -p /opt/equiptrack/uploads
+    ```
+
+2. 在任意目录（例如 `/opt/equiptrack`）创建 `docker-compose.yml`，内容如下：
+
+    ```yaml
+    version: "3.8"
+
+    services:
+      equiptrack-server:
+        image: yemiao351/equiptrack:latest
+        container_name: equiptrack-server
+        restart: unless-stopped
+        ports:
+          - "13000:3000"
+        volumes:
+          - "/opt/equiptrack/data:/app/data"
+          - "/opt/equiptrack/uploads:/app/uploads"
+        environment:
+          - NODE_ENV=production
+    ```
+
+3. 在该目录运行：
+
+    ```bash
+    docker compose up -d
+    ```
+
+之后每次代码更新并触发 CI 构建后，只需在同一目录执行：
+
+```bash
+docker compose pull equiptrack-server
+docker compose up -d equiptrack-server
+```
+
+即可拉取最新镜像并在保留端口映射与数据挂载的前提下重建容器。
+
+### 方式二：本地构建镜像
+
+如需在本地自行构建镜像，也可以使用以下命令：
 
 ```bash
 docker build -t equiptrack-server .
 ```
 
-### 运行容器
+然后运行容器：
 
 ```bash
 docker run -d \
