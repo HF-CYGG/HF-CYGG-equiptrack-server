@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  equiptrack-server:
+    image: yemiao351/equiptrack:latest
+    container_name: equiptrack-server
+    restart: unless-stopped
+    ports:
+      - "13000:3000"
+    volumes:
+      - "/opt/equiptrack/data:/app/data"
+      - "/opt/equiptrack/uploads:/app/uploads"
+    environment:
+      - NODE_ENV=production
+
