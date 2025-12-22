@@ -52,7 +52,9 @@ api.post("/upload", upload.single("file"), (req, res, next) => {
     // This handles the dynamic subfolder logic from the upload middleware
     const type = req.query.type || req.body.type;
     let subfolder = "others";
-    if (type === "item") subfolder = "items";
+    if (type === "item_thumb") subfolder = "items/thumbs";
+    else if (type === "item_full") subfolder = "items/full";
+    else if (type === "item") subfolder = "items";
     else if (type === "return" || type === "borrow") subfolder = "returns";
     
     const fileUrl = `/uploads/${subfolder}/${req.file.filename}`;

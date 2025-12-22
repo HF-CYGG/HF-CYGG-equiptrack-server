@@ -42,20 +42,21 @@ export async function deleteItem(id: string): Promise<{ message: string }> {
   const itemToDelete = list[idx];
   
   // Delete associated image file if it exists
-  if (itemToDelete.image && itemToDelete.image.startsWith("/uploads/")) {
-      try {
-          // Remove leading slash to get relative path from cwd
-          const relativePath = itemToDelete.image.substring(1);
-          const absolutePath = path.join(process.cwd(), relativePath);
-          if (fs.existsSync(absolutePath)) {
-              fs.unlinkSync(absolutePath);
-              console.log(`Deleted image file: ${absolutePath}`);
-          }
-      } catch (err) {
-          console.error("Error deleting image file:", err);
-          // Continue deletion of item even if file deletion fails
+  const tryDeleteUploadFile = (p?: string) => {
+    if (!p || !p.startsWith("/uploads/")) return;
+    try {
+      const relativePath = p.substring(1);
+      const absolutePath = path.join(process.cwd(), relativePath);
+      if (fs.existsSync(absolutePath)) {
+        fs.unlinkSync(absolutePath);
       }
-  }
+    } catch (_err) {
+      return;
+    }
+  };
+
+  tryDeleteUploadFile(itemToDelete.image);
+  tryDeleteUploadFile(itemToDelete.imageFull);
 
   const next = list.filter((i) => i.id !== id);
   await writeAll<EquipmentItem>(COLLECTION, next);

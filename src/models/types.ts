@@ -44,6 +44,7 @@ export interface EquipmentItem {
   totalQuantity: number;
   availableQuantity: number;
   image?: string; // Main image path
+  imageFull?: string; // Full image path
   photos?: string[]; // 可选图片
   borrowHistory: BorrowHistoryEntry[];
 }
