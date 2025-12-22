@@ -19,7 +19,7 @@ jobs:
       - name: Build image (no push)
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./Dockerfile
-          push: false
+          context: .          # ✅ 关键：以仓库根目录作为构建上下文
+          file: ./Dockerfile  # ✅ Dockerfile 在根目录
+          push: false         # ✅ 先不推送，只验证能否构建
           tags: equiptrack-server:test
