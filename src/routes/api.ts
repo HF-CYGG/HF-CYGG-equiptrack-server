@@ -245,6 +245,11 @@ api.post("/items/:id/borrow", async (req, res, next) => {
     res.json(
       await borrowItem(req.params.id, {
         borrower: borrower,
+        operator: {
+          id: user.id,
+          name: user.name,
+          phone: user.contact
+        },
         expectedReturnDate: req.body.expectedReturnDate,
         photo: req.body.photo,
       })
