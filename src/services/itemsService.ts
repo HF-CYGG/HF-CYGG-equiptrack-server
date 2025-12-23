@@ -65,7 +65,7 @@ export async function deleteItem(id: string): Promise<{ message: string }> {
 
 export async function borrowItem(
   id: string,
-  payload: { borrower: BorrowerInfo; expectedReturnDate: string; photo?: string }
+  payload: { borrower: BorrowerInfo; operator?: BorrowerInfo; expectedReturnDate: string; photo?: string }
 ): Promise<EquipmentItem> {
   const list = await listItems();
   const idx = list.findIndex((i) => i.id === id);
@@ -78,6 +78,7 @@ export async function borrowItem(
     id: generateId("hist"),
     itemId: id,
     borrower: payload.borrower,
+    operator: payload.operator,
     borrowDate: new Date().toISOString(),
     expectedReturnDate: payload.expectedReturnDate,
     status: "借用中",

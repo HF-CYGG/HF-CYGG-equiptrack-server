@@ -34,6 +34,7 @@ export interface BorrowHistoryEntry {
   photo?: string; // Borrow proof photo
   returnPhoto?: string; // Return proof photo
   forcedReturnBy?: string; // 管理员强制归还者
+  operator?: BorrowerInfo; // Operator who performed the borrow action
 }
 
 export interface EquipmentItem {

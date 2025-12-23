@@ -373,10 +373,10 @@ api.get("/history", async (req, res, next) => {
             // Flatten borrower info for Android compatibility
             borrowerName: h.borrower?.name || "未知借用人",
             borrowerContact: h.borrower?.phone || "",
-            // Provide default operator info (since server doesn't store it yet)
-            operatorUserId: "",
-            operatorName: "系统记录",
-            operatorContact: ""
+            // Provide operator info
+            operatorUserId: h.operator?.id || "",
+            operatorName: h.operator?.name || "系统记录",
+            operatorContact: h.operator?.phone || ""
           }))
         );
       }
