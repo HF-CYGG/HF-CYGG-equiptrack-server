@@ -5,7 +5,9 @@ import { listCategories, addCategory, deleteCategory } from "../services/categor
 import { listItems, getItem, addItem, updateItem, deleteItem, borrowItem, returnItem, filterItems } from "../services/itemsService";
 import { listUsers, getUser, addUser, updateUser, deleteUser, filterUsers } from "../services/usersService";
 import { listApprovals, approveRequest, rejectRequest } from "../services/approvalsService";
-import type { UserRole } from "../models/types";
+import { createBorrowRequest, listMyBorrowRequests, listReviewBorrowRequests, approveBorrowRequest, rejectBorrowRequest } from "../services/borrowRequestsService";
+import type { UserRole, BorrowRequestEntry } from "../models/types";
+import { readAll } from "../utils/store";
 import { authGuard } from "../middlewares/auth";
 import { upload } from "../middlewares/upload";
 
@@ -135,6 +137,22 @@ api.delete("/categories/:id", requireAdmin, async (req, res, next) => {
 api.get("/items", async (req, res, next) => {
   try {
     const items = await listItems();
+    const borrowRequests = await readAll<BorrowRequestEntry>("borrow_requests");
+    const pendingMap = new Map<string, number>();
+    for (const r of borrowRequests) {
+      if (r.status !== "pending") continue;
+      const current = pendingMap.get(r.itemId) ?? 0;
+      pendingMap.set(r.itemId, current + (r.quantity || 1));
+    }
+    const itemsWithPending = items.map((item) => {
+      const pending = pendingMap.get(item.id) ?? 0;
+      const adjustedAvailable = item.availableQuantity - pending;
+      return {
+        ...item,
+        availableQuantity: adjustedAvailable > 0 ? adjustedAvailable : 0,
+        pendingApprovalQuantity: pending,
+      };
+    });
     const ctx = (req as any).user as { role: UserRole; departmentId?: string };
     const userRole = ctx?.role as UserRole;
     
@@ -184,7 +202,7 @@ api.get("/items", async (req, res, next) => {
     }
 
     const allAvailable = req.query.allAvailable === "true";
-    const filtered = filterItems(items, { userRole, departmentId, allAvailable });
+    const filtered = filterItems(itemsWithPending, { userRole, departmentId, allAvailable });
     res.json(filtered);
   } catch (err) {
     next(err);
@@ -252,6 +270,107 @@ api.post("/items/:id/borrow", async (req, res, next) => {
         },
         expectedReturnDate: req.body.expectedReturnDate,
         photo: req.body.photo,
+        quantity: req.body.quantity,
+      })
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+api.post("/borrow-requests", async (req, res, next) => {
+  try {
+    const user = (req as any).user as { id: string; name: string; contact: string; role: UserRole; departmentId?: string };
+    const itemId = req.body?.itemId as string | undefined;
+    if (!itemId) {
+      res.status(400).json({ message: "itemId is required" });
+      return;
+    }
+
+    if (user.role !== "超级管理员" && !req.body?.photo) {
+      res.status(400).json({ message: "Photo is required" });
+      return;
+    }
+
+    let borrower = req.body.borrower;
+    if (user.role === "普通用户") {
+      borrower = {
+        id: user.id,
+        name: user.name,
+        phone: user.contact,
+      };
+    }
+
+    const created = await createBorrowRequest({
+      itemId,
+      borrower,
+      applicant: {
+        id: user.id,
+        name: user.name,
+        phone: user.contact,
+      },
+      expectedReturnDate: req.body.expectedReturnDate,
+      photo: req.body.photo,
+      quantity: req.body.quantity,
+    });
+    res.json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+api.get("/borrow-requests/mine", async (req, res, next) => {
+  try {
+    const user = (req as any).user as { id: string; contact?: string };
+    res.json(await listMyBorrowRequests({ userId: user.id, userContact: user.contact }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+api.get("/borrow-requests/review", async (req, res, next) => {
+  try {
+    const user = (req as any).user as { role: UserRole; departmentId?: string };
+    const status = req.query.status as any;
+    res.json(
+      await listReviewBorrowRequests({
+        userRole: user.role,
+        departmentId: user.departmentId,
+        status,
+      })
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+api.post("/borrow-requests/:id/approve", async (req, res, next) => {
+  try {
+    const user = (req as any).user as { id: string; name: string; contact: string; role: UserRole; departmentId?: string };
+    res.json(
+      await approveBorrowRequest({
+        requestId: req.params.id,
+        reviewer: { id: user.id, name: user.name, phone: user.contact },
+        reviewerRole: user.role,
+        reviewerDepartmentId: user.departmentId,
+        remark: req.body?.remark,
+      })
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+api.post("/borrow-requests/:id/reject", async (req, res, next) => {
+  try {
+    const user = (req as any).user as { id: string; name: string; contact: string; role: UserRole; departmentId?: string };
+    res.json(
+      await rejectBorrowRequest({
+        requestId: req.params.id,
+        reviewer: { id: user.id, name: user.name, phone: user.contact },
+        reviewerRole: user.role,
+        reviewerDepartmentId: user.departmentId,
+        remark: req.body?.remark,
       })
     );
   } catch (err) {

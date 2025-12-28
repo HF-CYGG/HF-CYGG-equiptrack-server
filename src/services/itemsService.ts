@@ -1,12 +1,33 @@
 import { readAll, writeAll, generateId } from "../utils/store";
-import type { EquipmentItem, BorrowHistoryEntry, BorrowerInfo, BorrowStatus, UserRole } from "../models/types";
+import type { EquipmentItem, BorrowHistoryEntry, BorrowerInfo, BorrowStatus, UserRole, BorrowRequestEntry } from "../models/types";
 import fs from "fs";
 import path from "path";
 
 const COLLECTION = "items";
+const BORROW_REQUESTS_COLLECTION = "borrow_requests";
 
 export async function listItems(): Promise<EquipmentItem[]> {
-  return readAll<EquipmentItem>(COLLECTION);
+  const items = await readAll<EquipmentItem>(COLLECTION);
+  const borrowRequests = await readAll<BorrowRequestEntry>(BORROW_REQUESTS_COLLECTION);
+  
+  const pendingRequests = borrowRequests.filter(req => req.status === "pending");
+  
+  // Calculate pending quantities map
+  const pendingMap = new Map<string, number>();
+  for (const req of pendingRequests) {
+    const current = pendingMap.get(req.itemId) || 0;
+    pendingMap.set(req.itemId, current + req.quantity);
+  }
+  
+  // Update items with pending quantity and adjust available quantity
+  return items.map(item => {
+    const pendingQty = pendingMap.get(item.id) || 0;
+    return {
+      ...item,
+      pendingApprovalQuantity: pendingQty,
+      availableQuantity: Math.max(0, item.availableQuantity - pendingQty)
+    };
+  });
 }
 
 export async function getItem(id: string): Promise<EquipmentItem> {
@@ -17,7 +38,7 @@ export async function getItem(id: string): Promise<EquipmentItem> {
 }
 
 export async function addItem(input: Omit<EquipmentItem, "id" | "borrowHistory">): Promise<EquipmentItem> {
-  const list = await listItems();
+  const list = await readAll<EquipmentItem>(COLLECTION);
   const item: EquipmentItem = { ...input, id: generateId("item"), borrowHistory: [] };
   list.push(item);
   await writeAll<EquipmentItem>(COLLECTION, list);
@@ -25,7 +46,7 @@ export async function addItem(input: Omit<EquipmentItem, "id" | "borrowHistory">
 }
 
 export async function updateItem(id: string, input: Partial<EquipmentItem>): Promise<EquipmentItem> {
-  const list = await listItems();
+  const list = await readAll<EquipmentItem>(COLLECTION);
   const idx = list.findIndex((i) => i.id === id);
   if (idx === -1) throw Object.assign(new Error("Item not found"), { status: 404 });
   const merged = { ...list[idx], ...input, id } as EquipmentItem;
@@ -35,7 +56,7 @@ export async function updateItem(id: string, input: Partial<EquipmentItem>): Pro
 }
 
 export async function deleteItem(id: string): Promise<{ message: string }> {
-  const list = await listItems();
+  const list = await readAll<EquipmentItem>(COLLECTION);
   const idx = list.findIndex((i) => i.id === id);
   if (idx === -1) throw Object.assign(new Error("Item not found"), { status: 404 });
   
@@ -65,27 +86,32 @@ export async function deleteItem(id: string): Promise<{ message: string }> {
 
 export async function borrowItem(
   id: string,
-  payload: { borrower: BorrowerInfo; operator?: BorrowerInfo; expectedReturnDate: string; photo?: string }
+  payload: { borrower: BorrowerInfo; operator?: BorrowerInfo; expectedReturnDate: string; photo?: string; quantity?: number }
 ): Promise<EquipmentItem> {
-  const list = await listItems();
+  const list = await readAll<EquipmentItem>(COLLECTION);
   const idx = list.findIndex((i) => i.id === id);
   if (idx === -1) throw Object.assign(new Error("Item not found"), { status: 404 });
   const item = list[idx];
-  if (item.availableQuantity <= 0) {
+  const quantity = payload.quantity && payload.quantity > 0 ? Math.floor(payload.quantity) : 1;
+  
+  // Check against RAW available quantity
+  if (item.availableQuantity < quantity) {
     throw Object.assign(new Error("No available quantity"), { status: 400 });
   }
-  const history: BorrowHistoryEntry = {
-    id: generateId("hist"),
-    itemId: id,
-    borrower: payload.borrower,
-    operator: payload.operator,
-    borrowDate: new Date().toISOString(),
-    expectedReturnDate: payload.expectedReturnDate,
-    status: "借用中",
-    photo: payload.photo,
-  };
-  item.availableQuantity -= 1;
-  item.borrowHistory.push(history);
+  for (let i = 0; i < quantity; i++) {
+    const history: BorrowHistoryEntry = {
+      id: generateId("hist"),
+      itemId: id,
+      borrower: payload.borrower,
+      operator: payload.operator,
+      borrowDate: new Date().toISOString(),
+      expectedReturnDate: payload.expectedReturnDate,
+      status: "借用中",
+      photo: payload.photo,
+    };
+    item.borrowHistory.push(history);
+  }
+  item.availableQuantity -= quantity;
   list[idx] = item;
   await writeAll<EquipmentItem>(COLLECTION, list);
   return item;
@@ -96,7 +122,7 @@ export async function returnItem(
   historyEntryId: string,
   payload: { photo?: string; isForced?: boolean; adminName?: string }
 ): Promise<EquipmentItem> {
-  const list = await listItems();
+  const list = await readAll<EquipmentItem>(COLLECTION);
   const idx = list.findIndex((i) => i.id === itemId);
   if (idx === -1) throw Object.assign(new Error("Item not found"), { status: 404 });
   const item = list[idx];

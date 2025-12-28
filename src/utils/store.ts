@@ -56,6 +56,7 @@ export async function initStore() {
     "items",
     "users",
     "registration_requests",
+    "borrow_requests",
   ];
   
   // Ensure files exist and load into cache

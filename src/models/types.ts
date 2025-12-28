@@ -17,6 +17,26 @@ export interface BorrowerInfo {
   phone: string;
 }
 
+export type BorrowRequestStatus = "pending" | "approved" | "rejected";
+
+export interface BorrowRequestEntry {
+  id: string;
+  itemId: string;
+  itemDepartmentId: string;
+  itemName?: string;
+  itemImage?: string;
+  borrower: BorrowerInfo;
+  applicant: BorrowerInfo;
+  expectedReturnDate: string;
+  photo?: string;
+  quantity: number;
+  status: BorrowRequestStatus;
+  remark?: string;
+  createdAt: string;
+  reviewedAt?: string;
+  reviewer?: BorrowerInfo;
+}
+
 export type BorrowStatus =
   | "借用中"
   | "逾期未归还"
@@ -44,6 +64,7 @@ export interface EquipmentItem {
   departmentId: string;
   totalQuantity: number;
   availableQuantity: number;
+  pendingApprovalQuantity?: number;
   image?: string; // Main image path
   imageFull?: string; // Full image path
   photos?: string[]; // 可选图片
