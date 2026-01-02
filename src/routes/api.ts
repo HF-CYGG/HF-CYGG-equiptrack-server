@@ -21,6 +21,23 @@ api.get("/system/android-version", async (_req, res, next) => {
     const versions = await readAll<AppVersion>("app_version");
     const latest = versions[0];
     if (latest) {
+      // Auto-fill Gitee download URL if missing
+      if (!latest.downloadUrl) {
+        try {
+          // Attempt to fetch latest release from Gitee
+          const giteeRes = await fetch("https://gitee.com/api/v5/repos/YeMiao_cats/EquipTrack/releases/latest");
+          if (giteeRes.ok) {
+            const release = await giteeRes.json() as any;
+            const apkAsset = release.assets?.find((a: any) => a.name && a.name.endsWith(".apk"));
+            if (apkAsset) {
+              // Construct URL: https://gitee.com/{owner}/{repo}/attach_files/{id}/download/{name}
+              latest.downloadUrl = `https://gitee.com/YeMiao_cats/EquipTrack/attach_files/${apkAsset.id}/download/${apkAsset.name}`;
+            }
+          }
+        } catch (error) {
+          console.error("[API] Failed to fetch Gitee release URL:", error);
+        }
+      }
       res.json(latest);
     } else {
       // Default / Initial state
