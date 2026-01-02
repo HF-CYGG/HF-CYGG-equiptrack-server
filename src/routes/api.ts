@@ -10,6 +10,7 @@ import type { UserRole, BorrowRequestEntry } from "../models/types";
 import { readAll } from "../utils/store";
 import { authGuard } from "../middlewares/auth";
 import { upload } from "../middlewares/upload";
+import { registerDeviceToken } from "../services/notificationService";
 
 export const api = Router();
 
@@ -68,6 +69,22 @@ api.post("/upload", upload.single("file"), (req, res, next) => {
 
 // Protect all routes below with JWT auth
 api.use(authGuard);
+
+// Notifications
+api.post("/notifications/register", async (req, res, next) => {
+  try {
+    const { token, platform } = req.body;
+    if (!token) {
+      res.status(400).json({ message: "Token is required" });
+      return;
+    }
+    // req.user is populated by authGuard
+    await registerDeviceToken((req as any).user!.id, token, platform || 'android');
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Helper for role check
 const requireAdmin = (req: any, res: any, next: any) => {

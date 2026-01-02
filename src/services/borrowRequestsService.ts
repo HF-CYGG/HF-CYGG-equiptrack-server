@@ -1,6 +1,7 @@
 import { readAll, writeAll, generateId } from "../utils/store";
 import type { BorrowRequestEntry, BorrowerInfo, UserRole } from "../models/types";
 import { getItem, borrowItem } from "./itemsService";
+import { notifyAdmins, sendPushNotification } from "./notificationService";
 
 const COLLECTION = "borrow_requests";
 
@@ -39,6 +40,14 @@ export async function createBorrowRequest(payload: {
 
   list.push(entry);
   await writeAll<BorrowRequestEntry>(COLLECTION, list);
+
+  // Notify Admins
+  notifyAdmins(
+      "新物资借用申请", 
+      `${payload.applicant.name} 申请借用 ${item.name} x${quantity}`,
+      { type: "borrow_request", requestId: entry.id }
+  ).catch(console.error);
+
   return entry;
 }
 
@@ -155,6 +164,17 @@ export async function approveBorrowRequest(payload: {
 
   list[idx] = updated;
   await writeAll<BorrowRequestEntry>(COLLECTION, list);
+
+  // Notify Applicant
+  if (updated.applicant?.id) {
+      sendPushNotification(
+          [updated.applicant.id],
+          "借用申请已批准",
+          `您申请借用的 ${updated.itemName} 已被 ${payload.reviewer.name} 批准`,
+          { type: "borrow_approved", requestId: updated.id }
+      ).catch(console.error);
+  }
+
   return updated;
 }
 
@@ -193,5 +213,16 @@ export async function rejectBorrowRequest(payload: {
 
   list[idx] = updated;
   await writeAll<BorrowRequestEntry>(COLLECTION, list);
+
+  // Notify Applicant
+  if (updated.applicant?.id) {
+      sendPushNotification(
+          [updated.applicant.id],
+          "借用申请被拒绝",
+          `您申请借用的 ${updated.itemName} 已被拒绝。原因：${payload.remark || '无'}`,
+          { type: "borrow_rejected", requestId: updated.id }
+      ).catch(console.error);
+  }
+
   return updated;
 }

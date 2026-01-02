@@ -2,6 +2,7 @@ import { readAll, writeAll, generateId } from "../utils/store";
 import type { User, RegistrationRequest } from "../models/types";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
+import { notifyAdmins } from "./notificationService";
 
 export async function login(contact: string, password: string): Promise<{ user: Omit<User, "password">; token: string }> {
   const users = await readAll<User>("users");
@@ -74,6 +75,14 @@ export async function signup(input: {
   };
   pending.push(req);
   await writeAll<RegistrationRequest>("registration_requests", pending);
+
+  // Notify Admins
+  notifyAdmins(
+      "新用户注册申请", 
+      `${req.name} (${req.departmentName}) 申请注册`,
+      { type: "registration_request", requestId: req.id }
+  ).catch(console.error);
+
   return { message: "注册申请已提交，等待管理员批准。" };
 }
 

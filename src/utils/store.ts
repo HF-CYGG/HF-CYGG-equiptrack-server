@@ -57,6 +57,7 @@ export async function initStore() {
     "users",
     "registration_requests",
     "borrow_requests",
+    "device_tokens",
   ];
   
   // Ensure files exist and load into cache

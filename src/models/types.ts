@@ -94,3 +94,10 @@ export interface RegistrationRequest {
   createdAt: string;
   password?: string;
 }
+
+export interface DeviceToken {
+  userId: string;
+  token: string;
+  platform: 'android' | 'ios' | 'web';
+  updatedAt: string;
+}
