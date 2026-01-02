@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
-import type { User, Department, Category } from "../models/types";
+import type { User, Department, Category, AppVersion } from "../models/types";
 
 const BASE_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 
@@ -58,6 +58,7 @@ export async function initStore() {
     "registration_requests",
     "borrow_requests",
     "device_tokens",
+    "app_version",
   ];
   
   // Ensure files exist and load into cache
@@ -100,6 +101,21 @@ async function seedDefaults() {
     ];
     await writeAll("categories", defaults);
     console.log("[Store] Seeded default categories");
+  }
+
+  // 3. App Version
+  const versions = await readAll<AppVersion>("app_version");
+  if (versions.length === 0) {
+    const defaultVersion: AppVersion = {
+      versionCode: 1,
+      versionName: "1.0.0",
+      updateContent: "Initial Release",
+      downloadUrl: "",
+      forceUpdate: false,
+      releaseDate: new Date().toISOString()
+    };
+    await writeAll("app_version", [defaultVersion]);
+    console.log("[Store] Seeded default app version");
   }
 
   // 3. Super Admin

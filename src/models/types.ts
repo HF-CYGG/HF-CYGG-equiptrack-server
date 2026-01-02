@@ -98,6 +98,15 @@ export interface RegistrationRequest {
 export interface DeviceToken {
   userId: string;
   token: string;
-  platform: 'android' | 'ios' | 'web';
-  updatedAt: string;
+  platform?: 'android' | 'ios' | 'web';
+  updatedAt?: string;
+}
+
+export interface AppVersion {
+  versionCode: number;
+  versionName: string;
+  updateContent: string;
+  downloadUrl: string;
+  forceUpdate: boolean;
+  releaseDate: string;
 }

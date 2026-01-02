@@ -11,8 +11,32 @@ import { readAll } from "../utils/store";
 import { authGuard } from "../middlewares/auth";
 import { upload } from "../middlewares/upload";
 import { registerDeviceToken } from "../services/notificationService";
+import type { AppVersion } from "../models/types";
 
 export const api = Router();
+
+// System / App Version
+api.get("/system/android-version", async (_req, res, next) => {
+  try {
+    const versions = await readAll<AppVersion>("app_version");
+    const latest = versions[0];
+    if (latest) {
+      res.json(latest);
+    } else {
+      // Default / Initial state
+      res.json({
+        versionCode: 1,
+        versionName: "1.0.0",
+        updateContent: "Initial Release",
+        downloadUrl: "",
+        forceUpdate: false,
+        releaseDate: new Date().toISOString()
+      });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Auth
 api.post("/login", async (req, res, next) => {
