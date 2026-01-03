@@ -7,28 +7,41 @@ export async function listDepartments(): Promise<Department[]> {
   return readAll<Department>(COLLECTION);
 }
 
-export async function addDepartment(input: { name: string }): Promise<Department> {
+export async function addDepartment(input: { name: string; requiresApproval?: boolean }): Promise<Department> {
   const list = await listDepartments();
   if (list.find((d) => d.name === input.name)) {
     throw Object.assign(new Error("该部门名称已存在。"), { status: 400 });
   }
-  const dept: Department = { id: generateId("dept"), name: input.name };
+  const dept: Department = { 
+    id: generateId("dept"), 
+    name: input.name,
+    requiresApproval: input.requiresApproval !== undefined ? input.requiresApproval : true
+  };
   list.push(dept);
   await writeAll<Department>(COLLECTION, list);
   return dept;
 }
 
-export async function updateDepartment(id: string, input: { name: string }): Promise<Department> {
+export async function updateDepartment(id: string, input: { name: string; requiresApproval?: boolean }): Promise<Department> {
   const list = await listDepartments();
   const idx = list.findIndex((d) => d.id === id);
   if (idx === -1) throw Object.assign(new Error("Department not found"), { status: 404 });
-  list[idx].name = input.name;
+  
+  const oldDept = list[idx];
+  list[idx] = {
+    ...oldDept,
+    name: input.name,
+    requiresApproval: input.requiresApproval !== undefined ? input.requiresApproval : oldDept.requiresApproval
+  };
+  
   await writeAll<Department>(COLLECTION, list);
 
   // 同步更新用户的 departmentName
-  const users = await readAll<User>("users");
-  const updated = users.map((u) => (u.departmentId === id ? { ...u, departmentName: input.name } : u));
-  await writeAll<User>("users", updated);
+  if (input.name !== oldDept.name) {
+    const users = await readAll<User>("users");
+    const updated = users.map((u) => (u.departmentId === id ? { ...u, departmentName: input.name } : u));
+    await writeAll<User>("users", updated);
+  }
   return list[idx];
 }
 

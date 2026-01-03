@@ -1,5 +1,5 @@
 import { readAll, writeAll, generateId } from "../utils/store";
-import type { BorrowRequestEntry, BorrowerInfo, UserRole } from "../models/types";
+import type { BorrowRequestEntry, BorrowerInfo, UserRole, Department, EquipmentItem } from "../models/types";
 import { getItem, borrowItem } from "./itemsService";
 import { notifyAdmins, sendPushNotification } from "./notificationService";
 
@@ -19,6 +19,58 @@ export async function createBorrowRequest(payload: {
   // Check available quantity (which includes pending requests deduction)
   if (item.availableQuantity < quantity) {
      throw Object.assign(new Error(`库存不足，当前可用: ${item.availableQuantity}`), { status: 400 });
+  }
+
+  // Check Approval Settings
+  let requiresApproval = true;
+  if (item.requiresApproval !== undefined) {
+    requiresApproval = item.requiresApproval;
+  } else {
+    // Fallback to department setting
+    const departments = await readAll<Department>("departments");
+    const dept = departments.find(d => d.id === item.departmentId);
+    if (dept && dept.requiresApproval !== undefined) {
+      requiresApproval = dept.requiresApproval;
+    }
+  }
+
+  // If no approval required, borrow immediately
+  if (!requiresApproval) {
+     await borrowItem(payload.itemId, {
+       borrower: payload.borrower,
+       operator: { name: "System (Auto-Approved)", phone: "" },
+       expectedReturnDate: payload.expectedReturnDate,
+       photo: payload.photo,
+       quantity: quantity
+     });
+
+     // Return a fake "approved" entry for UI consistency
+     const autoEntry: BorrowRequestEntry = {
+        id: generateId("brwreq"),
+        itemId: payload.itemId,
+        itemDepartmentId: item.departmentId,
+        itemName: item.name,
+        itemImage: item.image,
+        borrower: payload.borrower,
+        applicant: payload.applicant,
+        expectedReturnDate: payload.expectedReturnDate,
+        photo: payload.photo,
+        quantity,
+        status: "approved",
+        createdAt: new Date().toISOString(),
+        reviewedAt: new Date().toISOString(),
+        reviewer: { name: "System", phone: "" },
+        remark: "自动免审批"
+     };
+     
+     // Optionally log this request to history if needed, but borrowItem already adds to item history.
+     // We might want to save this request to borrow_requests collection too for record keeping?
+     // Yes, let's save it as approved.
+     const list = await readAll<BorrowRequestEntry>(COLLECTION);
+     list.push(autoEntry);
+     await writeAll<BorrowRequestEntry>(COLLECTION, list);
+     
+     return autoEntry;
   }
 
   const list = await readAll<BorrowRequestEntry>(COLLECTION);

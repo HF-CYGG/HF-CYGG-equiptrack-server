@@ -3,6 +3,7 @@ export type UserRole = "超级管理员" | "管理员" | "高级用户" | "普�
 export interface Department {
   id: string;
   name: string;
+  requiresApproval?: boolean;
 }
 
 export interface Category {
@@ -68,6 +69,7 @@ export interface EquipmentItem {
   image?: string; // Main image path
   imageFull?: string; // Full image path
   photos?: string[]; // 可选图片
+  requiresApproval?: boolean; // Default: true (or inherit from department)
   borrowHistory: BorrowHistoryEntry[];
 }
 
