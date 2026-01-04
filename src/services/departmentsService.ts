@@ -4,7 +4,12 @@ import type { Department, User, EquipmentItem } from "../models/types";
 const COLLECTION = "departments";
 
 export async function listDepartments(): Promise<Department[]> {
-  return readAll<Department>(COLLECTION);
+  const list = await readAll<Department>(COLLECTION);
+  // Ensure requiresApproval is set to true by default if missing
+  return list.map(d => ({
+    ...d,
+    requiresApproval: d.requiresApproval ?? true
+  }));
 }
 
 export async function addDepartment(input: { name: string; requiresApproval?: boolean }): Promise<Department> {
@@ -35,6 +40,25 @@ export async function updateDepartment(id: string, input: { name: string; requir
   };
   
   await writeAll<Department>(COLLECTION, list);
+
+  // Sync items: If approval status changed, reset item-level override to inherit from department
+  if (input.requiresApproval !== undefined) {
+    const items = await readAll<EquipmentItem>("items");
+    let itemsChanged = false;
+    const updatedItems = items.map(item => {
+      if (item.departmentId === id && item.requiresApproval !== undefined) {
+        // Create a new object without the requiresApproval property to let it inherit
+        const { requiresApproval, ...rest } = item;
+        itemsChanged = true;
+        return rest as EquipmentItem;
+      }
+      return item;
+    });
+
+    if (itemsChanged) {
+      await writeAll<EquipmentItem>("items", updatedItems);
+    }
+  }
 
   // 同步更新用户的 departmentName
   if (input.name !== oldDept.name) {

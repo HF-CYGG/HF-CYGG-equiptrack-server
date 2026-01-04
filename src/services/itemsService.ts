@@ -1,5 +1,5 @@
 import { readAll, writeAll, generateId } from "../utils/store";
-import type { EquipmentItem, BorrowHistoryEntry, BorrowerInfo, BorrowStatus, UserRole, BorrowRequestEntry } from "../models/types";
+import type { EquipmentItem, BorrowHistoryEntry, BorrowerInfo, BorrowStatus, UserRole, BorrowRequestEntry, Department } from "../models/types";
 import fs from "fs";
 import path from "path";
 
@@ -9,6 +9,7 @@ const BORROW_REQUESTS_COLLECTION = "borrow_requests";
 export async function listItems(): Promise<EquipmentItem[]> {
   const items = await readAll<EquipmentItem>(COLLECTION);
   const borrowRequests = await readAll<BorrowRequestEntry>(BORROW_REQUESTS_COLLECTION);
+  const departments = await readAll<Department>("departments");
   
   const pendingRequests = borrowRequests.filter(req => req.status === "pending");
   
@@ -22,8 +23,18 @@ export async function listItems(): Promise<EquipmentItem[]> {
   // Update items with pending quantity and adjust available quantity
   return items.map(item => {
     const pendingQty = pendingMap.get(item.id) || 0;
+    
+    // Resolve effective requiresApproval
+    // If undefined, inherit from department, otherwise default to true
+    let effectiveRequiresApproval = item.requiresApproval;
+    if (effectiveRequiresApproval === undefined) {
+        const dept = departments.find(d => d.id === item.departmentId);
+        effectiveRequiresApproval = dept?.requiresApproval ?? true;
+    }
+
     return {
       ...item,
+      requiresApproval: effectiveRequiresApproval,
       pendingApprovalQuantity: pendingQty,
       availableQuantity: Math.max(0, item.availableQuantity - pendingQty)
     };
