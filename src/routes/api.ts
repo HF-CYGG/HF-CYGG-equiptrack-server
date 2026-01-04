@@ -589,7 +589,11 @@ api.get("/history", async (req, res, next) => {
         }
     }
 
-    filtered.sort((a, b) => new Date(b.borrowDate).getTime() - new Date(a.borrowDate).getTime());
+    filtered.sort((a, b) => {
+        const timeA = new Date(a.borrowDate).getTime();
+        const timeB = new Date(b.borrowDate).getTime();
+        return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+    });
 
     res.json(filtered);
   } catch (err) {

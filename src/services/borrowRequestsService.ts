@@ -58,10 +58,11 @@ export async function createBorrowRequest(payload: {
         quantity,
         status: "approved",
         createdAt: new Date().toISOString(),
-        reviewedAt: new Date().toISOString(),
-        reviewer: { name: "System", phone: "" },
-        remark: "自动免审批"
-     };
+       reviewedAt: new Date().toISOString(),
+       reviewer: { name: "System", phone: "" },
+       remark: "自动免审批",
+       borrowDate: new Date().toISOString()
+    };
      
      // Optionally log this request to history if needed, but borrowItem already adds to item history.
      // We might want to save this request to borrow_requests collection too for record keeping?
@@ -97,11 +98,38 @@ export async function createBorrowRequest(payload: {
   notifyAdmins(
       "新物资借用申请", 
       `${payload.applicant.name} 申请借用 ${item.name} x${quantity}`,
-      { type: "borrow_request", requestId: entry.id }
+      { type: "borrow_request", requestId: entry.id },
+      item.departmentId
   ).catch(console.error);
 
   return entry;
 }
+
+// Simple Mutex for concurrency control
+class Mutex {
+    private mutex = Promise.resolve();
+    
+    lock(): Promise<() => void> {
+        let unlock: () => void = () => {};
+        const nextMutex = new Promise<void>(resolve => {
+            unlock = () => resolve();
+        });
+        const acquired = this.mutex.then(() => unlock);
+        this.mutex = this.mutex.then(() => nextMutex);
+        return acquired;
+    }
+    
+    async dispatch<T>(fn: (() => T) | (() => PromiseLike<T>)): Promise<T> {
+        const unlock = await this.lock();
+        try {
+            return await Promise.resolve(fn());
+        } finally {
+            unlock();
+        }
+    }
+}
+
+const approvalMutex = new Mutex();
 
 export async function listMyBorrowRequests(ctx: {
   userId: string;
@@ -180,54 +208,56 @@ export async function approveBorrowRequest(payload: {
   reviewerDepartmentId?: string;
   remark?: string;
 }): Promise<BorrowRequestEntry> {
-  const list = await readAll<BorrowRequestEntry>(COLLECTION);
-  const idx = list.findIndex((r) => r.id === payload.requestId);
-  if (idx === -1) throw Object.assign(new Error("Request not found"), { status: 404 });
+  return approvalMutex.dispatch(async () => {
+    const list = await readAll<BorrowRequestEntry>(COLLECTION);
+    const idx = list.findIndex((r) => r.id === payload.requestId);
+    if (idx === -1) throw Object.assign(new Error("Request not found"), { status: 404 });
 
-  const req = list[idx];
-  if (req.status !== "pending") {
-    throw Object.assign(new Error("Request already processed"), { status: 400 });
-  }
-
-  if (payload.reviewerRole !== "超级管理员") {
-    if (payload.reviewerRole !== "管理员" && payload.reviewerRole !== "高级用户") {
-      throw Object.assign(new Error("Forbidden"), { status: 403 });
+    const req = list[idx];
+    if (req.status !== "pending") {
+      throw Object.assign(new Error("Request already processed"), { status: 400 });
     }
-    if (!payload.reviewerDepartmentId || payload.reviewerDepartmentId !== req.itemDepartmentId) {
-      throw Object.assign(new Error("Forbidden"), { status: 403 });
-    }
-  }
 
-  await borrowItem(req.itemId, {
-    borrower: req.borrower,
-    operator: payload.reviewer,
-    expectedReturnDate: req.expectedReturnDate,
-    photo: req.photo,
-    quantity: req.quantity,
+    if (payload.reviewerRole !== "超级管理员") {
+      if (payload.reviewerRole !== "管理员" && payload.reviewerRole !== "高级用户") {
+        throw Object.assign(new Error("Forbidden"), { status: 403 });
+      }
+      if (!payload.reviewerDepartmentId || payload.reviewerDepartmentId !== req.itemDepartmentId) {
+        throw Object.assign(new Error("Forbidden"), { status: 403 });
+      }
+    }
+
+    await borrowItem(req.itemId, {
+      borrower: req.borrower,
+      operator: payload.reviewer,
+      expectedReturnDate: req.expectedReturnDate,
+      photo: req.photo,
+      quantity: req.quantity,
+    });
+
+    const updated: BorrowRequestEntry = {
+      ...req,
+      status: "approved",
+      remark: payload.remark,
+      reviewedAt: new Date().toISOString(),
+      reviewer: payload.reviewer,
+    };
+
+    list[idx] = updated;
+    await writeAll<BorrowRequestEntry>(COLLECTION, list);
+
+    // Notify Applicant
+    if (updated.applicant?.id) {
+        sendPushNotification(
+            [updated.applicant.id],
+            "借用申请已批准",
+            `您申请借用的 ${updated.itemName} 已被 ${payload.reviewer.name} 批准`,
+            { type: "borrow_approved", requestId: updated.id }
+        ).catch(console.error);
+    }
+
+    return updated;
   });
-
-  const updated: BorrowRequestEntry = {
-    ...req,
-    status: "approved",
-    remark: payload.remark,
-    reviewedAt: new Date().toISOString(),
-    reviewer: payload.reviewer,
-  };
-
-  list[idx] = updated;
-  await writeAll<BorrowRequestEntry>(COLLECTION, list);
-
-  // Notify Applicant
-  if (updated.applicant?.id) {
-      sendPushNotification(
-          [updated.applicant.id],
-          "借用申请已批准",
-          `您申请借用的 ${updated.itemName} 已被 ${payload.reviewer.name} 批准`,
-          { type: "borrow_approved", requestId: updated.id }
-      ).catch(console.error);
-  }
-
-  return updated;
 }
 
 export async function rejectBorrowRequest(payload: {
@@ -237,44 +267,46 @@ export async function rejectBorrowRequest(payload: {
   reviewerDepartmentId?: string;
   remark?: string;
 }): Promise<BorrowRequestEntry> {
-  const list = await readAll<BorrowRequestEntry>(COLLECTION);
-  const idx = list.findIndex((r) => r.id === payload.requestId);
-  if (idx === -1) throw Object.assign(new Error("Request not found"), { status: 404 });
+  return approvalMutex.dispatch(async () => {
+    const list = await readAll<BorrowRequestEntry>(COLLECTION);
+    const idx = list.findIndex((r) => r.id === payload.requestId);
+    if (idx === -1) throw Object.assign(new Error("Request not found"), { status: 404 });
 
-  const req = list[idx];
-  if (req.status !== "pending") {
-    throw Object.assign(new Error("Request already processed"), { status: 400 });
-  }
-
-  if (payload.reviewerRole !== "超级管理员") {
-    if (payload.reviewerRole !== "管理员" && payload.reviewerRole !== "高级用户") {
-      throw Object.assign(new Error("Forbidden"), { status: 403 });
+    const req = list[idx];
+    if (req.status !== "pending") {
+      throw Object.assign(new Error("Request already processed"), { status: 400 });
     }
-    if (!payload.reviewerDepartmentId || payload.reviewerDepartmentId !== req.itemDepartmentId) {
-      throw Object.assign(new Error("Forbidden"), { status: 403 });
+
+    if (payload.reviewerRole !== "超级管理员") {
+      if (payload.reviewerRole !== "管理员" && payload.reviewerRole !== "高级用户") {
+        throw Object.assign(new Error("Forbidden"), { status: 403 });
+      }
+      if (!payload.reviewerDepartmentId || payload.reviewerDepartmentId !== req.itemDepartmentId) {
+        throw Object.assign(new Error("Forbidden"), { status: 403 });
+      }
     }
-  }
 
-  const updated: BorrowRequestEntry = {
-    ...req,
-    status: "rejected",
-    remark: payload.remark,
-    reviewedAt: new Date().toISOString(),
-    reviewer: payload.reviewer,
-  };
+    const updated: BorrowRequestEntry = {
+      ...req,
+      status: "rejected",
+      remark: payload.remark,
+      reviewedAt: new Date().toISOString(),
+      reviewer: payload.reviewer,
+    };
 
-  list[idx] = updated;
-  await writeAll<BorrowRequestEntry>(COLLECTION, list);
+    list[idx] = updated;
+    await writeAll<BorrowRequestEntry>(COLLECTION, list);
 
-  // Notify Applicant
-  if (updated.applicant?.id) {
-      sendPushNotification(
-          [updated.applicant.id],
-          "借用申请被拒绝",
-          `您申请借用的 ${updated.itemName} 已被拒绝。原因：${payload.remark || '无'}`,
-          { type: "borrow_rejected", requestId: updated.id }
-      ).catch(console.error);
-  }
+    // Notify Applicant
+    if (updated.applicant?.id) {
+        sendPushNotification(
+            [updated.applicant.id],
+            "借用申请被拒绝",
+            `您申请借用的 ${updated.itemName} 已被拒绝。原因：${payload.remark || '无'}`,
+            { type: "borrow_rejected", requestId: updated.id }
+        ).catch(console.error);
+    }
 
-  return updated;
+    return updated;
+  });
 }

@@ -106,9 +106,20 @@ export async function sendPushNotification(userIds: string[], title: string, bod
 }
 
 // Helper to notify admins
-export async function notifyAdmins(title: string, body: string, data?: Record<string, string>) {
+export async function notifyAdmins(title: string, body: string, data?: Record<string, string>, targetDepartmentId?: string) {
     const users = await readAll<User>('users');
-    const admins = users.filter(u => u.role === '超级管理员' || u.role === '管理员').map(u => u.id);
+    const admins = users.filter(u => {
+        if (u.role === '超级管理员') return true;
+        if (u.role === '管理员' || u.role === '高级用户') {
+            // If a specific department is targeted, only notify admins of that department
+            if (targetDepartmentId) {
+                return u.departmentId === targetDepartmentId;
+            }
+            return true; // If no department specified, notify all admins (fallback)
+        }
+        return false;
+    }).map(u => u.id);
+
     if (admins.length > 0) {
         await sendPushNotification(admins, title, body, data);
     }

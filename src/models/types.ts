@@ -36,6 +36,7 @@ export interface BorrowRequestEntry {
   createdAt: string;
   reviewedAt?: string;
   reviewer?: BorrowerInfo;
+  borrowDate?: string;
 }
 
 export type BorrowStatus =
