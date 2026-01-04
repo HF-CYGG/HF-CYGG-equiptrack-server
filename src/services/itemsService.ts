@@ -133,8 +133,15 @@ export async function returnItem(
     throw Object.assign(new Error("Invalid history status"), { status: 400 });
   }
   item.availableQuantity += 1;
-  entry.returnDate = new Date().toISOString();
-  entry.status = entry.status === "逾期未归还" ? (payload.isForced ? "逾期归还" : "逾期归还") : payload.isForced ? "已归还" : "已归还";
+  const now = new Date();
+  entry.returnDate = now.toISOString();
+  
+  // Check if overdue based on actual time vs expected time
+  const expectedDate = new Date(entry.expectedReturnDate);
+  const isOverdue = now.getTime() > expectedDate.getTime();
+  
+  entry.status = isOverdue ? "逾期归还" : "已归还";
+  
   if (payload.isForced && payload.adminName) entry.forcedReturnBy = payload.adminName;
   if (payload.photo) entry.returnPhoto = payload.photo;
   item.borrowHistory[hIdx] = entry;
