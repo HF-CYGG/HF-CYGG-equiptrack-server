@@ -12,13 +12,24 @@ import { authGuard } from "../middlewares/auth";
 import { upload } from "../middlewares/upload";
 import { registerDeviceToken } from "../services/notificationService";
 import type { AppVersion } from "../models/types";
+import { promises as fs } from "fs";
+import path from "path";
 
 export const api = Router();
 
 // System / App Version
 api.get("/system/android-version", async (_req, res, next) => {
   try {
-    const versions = await readAll<AppVersion>("app_version");
+    const versionPath = path.join(process.cwd(), "app_version.json");
+    let versions: AppVersion[] = [];
+    try {
+        const data = await fs.readFile(versionPath, "utf8");
+        versions = JSON.parse(data);
+    } catch (e) {
+        // Fallback or empty if file not found
+        console.error("Failed to read app_version.json", e);
+    }
+    
     const latest = versions[0];
     if (latest) {
       // Auto-fill download URL if missing, using GitHub Release with CDN
