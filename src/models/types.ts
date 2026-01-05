@@ -3,6 +3,7 @@ export type UserRole = "超级管理员" | "管理员" | "高级用户" | "普�
 export interface Department {
   id: string;
   name: string;
+  parentId?: string;
   requiresApproval?: boolean;
 }
 

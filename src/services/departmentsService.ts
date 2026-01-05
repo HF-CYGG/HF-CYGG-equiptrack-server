@@ -12,22 +12,23 @@ export async function listDepartments(): Promise<Department[]> {
   }));
 }
 
-export async function addDepartment(input: { name: string; requiresApproval?: boolean }): Promise<Department> {
+export async function addDepartment(input: { name: string; requiresApproval?: boolean; parentId?: string }): Promise<Department> {
   const list = await listDepartments();
-  if (list.find((d) => d.name === input.name)) {
+  if (list.find((d) => d.name === input.name && d.parentId === input.parentId)) {
     throw Object.assign(new Error("该部门名称已存在。"), { status: 400 });
   }
   const dept: Department = { 
     id: generateId("dept"), 
     name: input.name,
-    requiresApproval: input.requiresApproval !== undefined ? input.requiresApproval : true
+    requiresApproval: input.requiresApproval !== undefined ? input.requiresApproval : true,
+    parentId: input.parentId
   };
   list.push(dept);
   await writeAll<Department>(COLLECTION, list);
   return dept;
 }
 
-export async function updateDepartment(id: string, input: { name: string; requiresApproval?: boolean }): Promise<Department> {
+export async function updateDepartment(id: string, input: { name: string; requiresApproval?: boolean; parentId?: string }): Promise<Department> {
   const list = await listDepartments();
   const idx = list.findIndex((d) => d.id === id);
   if (idx === -1) throw Object.assign(new Error("Department not found"), { status: 404 });
@@ -36,7 +37,8 @@ export async function updateDepartment(id: string, input: { name: string; requir
   list[idx] = {
     ...oldDept,
     name: input.name,
-    requiresApproval: input.requiresApproval !== undefined ? input.requiresApproval : oldDept.requiresApproval
+    requiresApproval: input.requiresApproval !== undefined ? input.requiresApproval : oldDept.requiresApproval,
+    parentId: input.parentId !== undefined ? input.parentId : oldDept.parentId
   };
   
   await writeAll<Department>(COLLECTION, list);
