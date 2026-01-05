@@ -20,7 +20,9 @@ export const api = Router();
 // System / App Version
 api.get("/system/android-version", async (_req, res, next) => {
   try {
-    const versionPath = path.join(process.cwd(), "app_version.json");
+    // Use __dirname to reliably locate app_version.json relative to the compiled file location
+    // dist/routes/api.js -> ../../app_version.json
+    const versionPath = path.resolve(__dirname, "../../app_version.json");
     let versions: AppVersion[] = [];
     try {
         const data = await fs.readFile(versionPath, "utf8");
