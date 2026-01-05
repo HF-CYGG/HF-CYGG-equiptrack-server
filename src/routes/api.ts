@@ -14,8 +14,18 @@ import { registerDeviceToken } from "../services/notificationService";
 import type { AppVersion } from "../models/types";
 import { promises as fs } from "fs";
 import path from "path";
+import rateLimit from "express-rate-limit";
 
 export const api = Router();
+
+// Rate limiter for login to prevent brute-force attacks
+const loginLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	max: 5, // Limit each IP to 5 requests per windowMs
+	message: { message: "尝试登录次数过多，请15分钟后再试" },
+	standardHeaders: true,
+	legacyHeaders: false,
+});
 
 // System / App Version
 api.get("/system/android-version", async (_req, res, next) => {
@@ -60,7 +70,7 @@ api.get("/system/android-version", async (_req, res, next) => {
 });
 
 // Auth
-api.post("/login", async (req, res, next) => {
+api.post("/login", loginLimiter, async (req, res, next) => {
   try {
     const { contact, password } = req.body || {};
     const { user, token } = await login(contact, password);
