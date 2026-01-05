@@ -27,6 +27,9 @@ RUN npm ci --only=production
 # Copy built assets from builder stage
 COPY --from=builder /app/dist ./dist
 
+# Copy app_version.json
+COPY app_version.json ./
+
 # Copy environment file example
 COPY .env.example ./.env
 
