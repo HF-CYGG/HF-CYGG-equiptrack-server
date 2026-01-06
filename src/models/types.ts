@@ -34,7 +34,8 @@ export interface BorrowRequestEntry {
   photo?: string;
   quantity: number;
   status: BorrowRequestStatus;
-  remark?: string;
+  remark?: string; // Reviewer's remark
+  note?: string; // Borrower's note
   createdAt: string;
   reviewedAt?: string;
   reviewer?: BorrowerInfo;

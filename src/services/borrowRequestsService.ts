@@ -12,6 +12,7 @@ export async function createBorrowRequest(payload: {
   expectedReturnDate: string;
   photo?: string;
   quantity?: number;
+  note?: string;
 }): Promise<BorrowRequestEntry> {
   const item = await getItem(payload.itemId);
   const quantity = payload.quantity && payload.quantity > 0 ? Math.floor(payload.quantity) : 1;
@@ -56,6 +57,7 @@ export async function createBorrowRequest(payload: {
         expectedReturnDate: payload.expectedReturnDate,
         photo: payload.photo,
         quantity,
+        note: payload.note,
         status: "approved",
         createdAt: new Date().toISOString(),
        reviewedAt: new Date().toISOString(),
@@ -87,6 +89,7 @@ export async function createBorrowRequest(payload: {
     expectedReturnDate: payload.expectedReturnDate,
     photo: payload.photo,
     quantity,
+    note: payload.note,
     status: "pending",
     createdAt: new Date().toISOString(),
   };

@@ -447,6 +447,7 @@ api.post("/borrow-requests", async (req, res, next) => {
       expectedReturnDate: req.body.expectedReturnDate,
       photo: req.body.photo,
       quantity: req.body.quantity,
+      note: req.body.note,
     });
     res.json(created);
   } catch (err) {
