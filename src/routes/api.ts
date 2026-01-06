@@ -110,12 +110,21 @@ api.post("/upload", upload.single("file"), (req, res, next) => {
     // This handles the dynamic subfolder logic from the upload middleware
     const type = req.query.type || req.body.type;
     let subfolder = "others";
+    let urlPrefix = "/uploads";
+
     if (type === "item_thumb") subfolder = "items/thumbs";
     else if (type === "item_full") subfolder = "items/full";
     else if (type === "item") subfolder = "items";
     else if (type === "return" || type === "borrow") subfolder = "returns";
+    else if (type === "avatar") {
+      urlPrefix = "/avatars";
+      subfolder = ""; // avatars are served directly from /avatars/filename
+    }
     
-    const fileUrl = `/uploads/${subfolder}/${req.file.filename}`;
+    const fileUrl = subfolder 
+      ? `${urlPrefix}/${subfolder}/${req.file.filename}` 
+      : `${urlPrefix}/${req.file.filename}`;
+      
     res.json({ url: fileUrl });
   } catch (err) {
     next(err);

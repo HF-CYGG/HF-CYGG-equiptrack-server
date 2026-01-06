@@ -30,6 +30,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Serve uploaded files
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use("/avatars", express.static(path.join(process.cwd(), "data", "avatars")));
 
 // Health check
 app.get("/health", (_req, res) => {

@@ -9,9 +9,10 @@ const itemsThumbsDir = path.join(itemsDir, "thumbs");
 const itemsFullDir = path.join(itemsDir, "full");
 const returnsDir = path.join(baseUploadDir, "returns");
 const othersDir = path.join(baseUploadDir, "others");
+const avatarsDir = path.join(process.cwd(), "data", "avatars");
 
 // Ensure directories exist
-[baseUploadDir, itemsDir, itemsThumbsDir, itemsFullDir, returnsDir, othersDir].forEach(dir => {
+[baseUploadDir, itemsDir, itemsThumbsDir, itemsFullDir, returnsDir, othersDir, avatarsDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -36,6 +37,8 @@ const storage = multer.diskStorage({
       subfolder = itemsDir;
     } else if (type === "return" || type === "borrow") {
       subfolder = returnsDir;
+    } else if (type === "avatar") {
+      subfolder = avatarsDir;
     }
 
     cb(null, subfolder);

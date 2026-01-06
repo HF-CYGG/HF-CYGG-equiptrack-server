@@ -85,6 +85,7 @@ export interface User {
   status?: string;
   password: string; // 存储明文仅用于演示；生产需哈希
   invitationCode?: string;
+  avatarUrl?: string;
 }
 
 export interface RegistrationRequest {
