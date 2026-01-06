@@ -1,10 +1,10 @@
 [
   {
-    "versionCode": 7,
-    "versionName": "0.5.0",
-    "updateContent": "1. 新增部门层级管理，支持创建子部门 (如 运营部 > 外宣部)\n2. 优化本地日志记录与错误处理，支持导出日志\n3. 优化数据同步机制，防止数据重叠\n4. 改进列表UI，增加垂直渐变边缘效果\n5. 相机界面与借用交互优化",
-    "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.5.0/app-release.apk",
+    "versionCode": 8,
+    "versionName": "0.5.1",
+    "updateContent": "1. 修复：网络请求底层崩溃问题 (OkHttp State 0)，提升稳定性\n2. 优化：重写系统说明界面，采用 Material Design 3 风格与折叠动画\n3. 优化：新增权限矩阵可视化与核心安全规则说明\n4. 优化：改进 FAQ 与操作指南的信息层级",
+    "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.5.1/app-release.apk",
     "forceUpdate": false,
-    "releaseDate": "2026-01-05T00:00:00.000Z"
+    "releaseDate": "2026-01-06T00:00:00.000Z"
   }
 ]
