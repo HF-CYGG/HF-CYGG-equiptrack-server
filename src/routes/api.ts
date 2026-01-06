@@ -157,6 +157,34 @@ const requireAdmin = (req: any, res: any, next: any) => {
   res.status(403).json({ message: "Forbidden: Admins only" });
 };
 
+// Role hierarchy definition (Lower value = Higher privilege)
+const ROLE_RANK: Record<UserRole, number> = {
+  "超级管理员": 0,
+  "管理员": 1,
+  "高级用户": 2,
+  "普通用户": 3
+};
+
+const getRoleRank = (role: UserRole): number => ROLE_RANK[role] ?? 999;
+
+// Helper to check strict hierarchy permission
+// Current user can only manage target users with STRICTLY LOWER rank (Higher rank value)
+const canManageTargetRole = (currentRole: UserRole, targetRole: UserRole): boolean => {
+  return getRoleRank(currentRole) < getRoleRank(targetRole);
+};
+
+// Helper for self or admin check
+const requireAdminOrSelf = (req: any, res: any, next: any) => {
+  const role = req.user?.role as UserRole;
+  const currentUserId = req.user?.id;
+  const targetUserId = req.params.id;
+
+  if (role === "超级管理员" || role === "管理员") return next();
+  if (currentUserId === targetUserId) return next();
+  
+  res.status(403).json({ message: "Forbidden: Admins or Self only" });
+};
+
 // Helper for item management check (Admins + Advanced Users)
 const requireItemManagePermission = (req: any, res: any, next: any) => {
   const role = req.user?.role as UserRole;
@@ -507,6 +535,15 @@ api.get("/users/:id", async (req, res, next) => {
 
 api.post("/users", requireAdmin, async (req, res, next) => {
   try {
+    const currentUserRole = (req as any).user.role as UserRole;
+    const newUserRole = req.body.role as UserRole;
+
+    // Security Check: Cannot create user with role >= current user
+    if (!canManageTargetRole(currentUserRole, newUserRole)) {
+       res.status(403).json({ message: "权限不足：无法创建同级或更高级别的用户角色" });
+       return;
+    }
+
     const { password, ...u } = await addUser(req.body);
     res.json(u);
   } catch (err) {
@@ -514,8 +551,53 @@ api.post("/users", requireAdmin, async (req, res, next) => {
   }
 });
 
-api.put("/users/:id", requireAdmin, async (req, res, next) => {
+api.put("/users/:id", requireAdminOrSelf, async (req, res, next) => {
   try {
+    const currentUser = (req as any).user;
+    const currentUserRole = currentUser.role as UserRole;
+    const currentUserId = currentUser.id;
+    const targetUserId = req.params.id;
+    const isSelf = currentUserId === targetUserId;
+
+    const targetUser = await getUser(req.params.id);
+    
+    // Security Check 1: Hierarchy enforcement (for managing others)
+    if (!isSelf) {
+        // Cannot edit user with role >= current user
+        if (!canManageTargetRole(currentUserRole, targetUser.role)) {
+            res.status(403).json({ message: "权限不足：无法编辑同级或更高级别的用户" });
+            return;
+        }
+
+        // If changing role, cannot promote to role >= current user
+        if (req.body.role && !canManageTargetRole(currentUserRole, req.body.role as UserRole)) {
+            res.status(403).json({ message: "权限不足：无法将用户提升至同级或更高级别" });
+            return;
+        }
+    } else {
+        // Security Check 2: Self-management restrictions (for non-Super Admins)
+        if (currentUserRole !== "超级管理员") {
+             // Cannot change own role
+             if (req.body.role && req.body.role !== targetUser.role) {
+                 res.status(403).json({ message: "权限不足：无法修改自己的角色" });
+                 return;
+             }
+             // Cannot change own status
+             if (req.body.status && req.body.status !== targetUser.status) {
+                 res.status(403).json({ message: "权限不足：无法修改自己的状态" });
+                 return;
+             }
+        }
+    }
+
+    // Security Check 3: Invitation Code (Global rule: Only Super Admin can change)
+    if (currentUserRole !== "超级管理员") {
+        if (req.body.invitationCode !== undefined && req.body.invitationCode !== targetUser.invitationCode) {
+             res.status(403).json({ message: "权限不足：仅超级管理员可修改邀请码" });
+             return;
+        }
+    }
+
     const { password, ...u } = await updateUser(req.params.id, req.body);
     res.json(u);
   } catch (err) {
@@ -525,6 +607,15 @@ api.put("/users/:id", requireAdmin, async (req, res, next) => {
 
 api.delete("/users/:id", requireAdmin, async (req, res, next) => {
   try {
+    const currentUserRole = (req as any).user.role as UserRole;
+    const targetUser = await getUser(req.params.id);
+
+    // Security Check: Cannot delete user with role >= current user
+    if (!canManageTargetRole(currentUserRole, targetUser.role)) {
+        res.status(403).json({ message: "权限不足：无法删除同级或更高级别的用户" });
+        return;
+    }
+
     res.json(await deleteUser(req.params.id));
   } catch (err) {
     next(err);
