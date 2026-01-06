@@ -5,6 +5,7 @@ export interface Department {
   name: string;
   parentId?: string;
   requiresApproval?: boolean;
+  order?: number;
 }
 
 export interface Category {

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { login, signup } from "../services/authService";
-import { listDepartments, addDepartment, updateDepartment, deleteDepartment } from "../services/departmentsService";
+import { listDepartments, addDepartment, updateDepartment, deleteDepartment, updateDepartmentStructure } from "../services/departmentsService";
 import { listCategories, addCategory, deleteCategory } from "../services/categoriesService";
 import { listItems, getItem, addItem, updateItem, deleteItem, borrowItem, returnItem, filterItems } from "../services/itemsService";
 import { listUsers, getUser, addUser, updateUser, deleteUser, filterUsers } from "../services/usersService";
@@ -90,6 +90,23 @@ api.post("/signup", async (req, res, next) => {
 });
 
 // Public Data
+api.put("/departments/structure", authGuard, async (req, res, next) => {
+  try {
+    // Only admins can update structure
+    const user = (req as any).user;
+    if (user.role !== "超级管理员" && user.role !== "管理员") {
+      throw Object.assign(new Error("无权操作"), { status: 403 });
+    }
+    const updates = req.body; // Array of { id, parentId, order }
+    if (!Array.isArray(updates)) {
+      throw Object.assign(new Error("Invalid input format"), { status: 400 });
+    }
+    res.json(await updateDepartmentStructure(updates));
+  } catch (err) {
+    next(err);
+  }
+});
+
 api.get("/departments", async (_req, res, next) => {
   try {
     res.json(await listDepartments());
@@ -115,7 +132,8 @@ api.post("/upload", upload.single("file"), (req, res, next) => {
     if (type === "item_thumb") subfolder = "items/thumbs";
     else if (type === "item_full") subfolder = "items/full";
     else if (type === "item") subfolder = "items";
-    else if (type === "return" || type === "borrow") subfolder = "returns";
+    else if (type === "return") subfolder = "returns";
+    else if (type === "borrow") subfolder = "borrows";
     else if (type === "avatar") {
       urlPrefix = "/avatars";
       subfolder = ""; // avatars are served directly from /avatars/filename
@@ -193,6 +211,14 @@ const requireItemManagePermission = (req: any, res: any, next: any) => {
 };
 
 // Departments (Protected actions)
+api.put("/departments/structure", requireAdmin, async (req, res, next) => {
+  try {
+    res.json(await updateDepartmentStructure(req.body));
+  } catch (err) {
+    next(err);
+  }
+});
+
 api.post("/departments", requireAdmin, async (req, res, next) => {
   try {
     res.json(await addDepartment(req.body));

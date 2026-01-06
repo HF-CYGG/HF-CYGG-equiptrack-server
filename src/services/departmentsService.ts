@@ -6,10 +6,40 @@ const COLLECTION = "departments";
 export async function listDepartments(): Promise<Department[]> {
   const list = await readAll<Department>(COLLECTION);
   // Ensure requiresApproval is set to true by default if missing
+  // Sort by order first, then by name
   return list.map(d => ({
     ...d,
-    requiresApproval: d.requiresApproval ?? true
-  }));
+    requiresApproval: d.requiresApproval ?? true,
+    order: d.order ?? 0
+  })).sort((a, b) => {
+    const orderDiff = (a.order || 0) - (b.order || 0);
+    if (orderDiff !== 0) return orderDiff;
+    return a.name.localeCompare(b.name, "zh-CN");
+  });
+}
+
+export async function updateDepartmentStructure(updates: { id: string; parentId?: string; order: number }[]): Promise<Department[]> {
+  const list = await listDepartments();
+  let changed = false;
+
+  for (const update of updates) {
+    const idx = list.findIndex(d => d.id === update.id);
+    if (idx !== -1) {
+      if (list[idx].parentId !== update.parentId || list[idx].order !== update.order) {
+        list[idx] = {
+          ...list[idx],
+          parentId: update.parentId,
+          order: update.order
+        };
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    await writeAll<Department>(COLLECTION, list);
+  }
+  return list;
 }
 
 export async function addDepartment(input: { name: string; requiresApproval?: boolean; parentId?: string }): Promise<Department> {
