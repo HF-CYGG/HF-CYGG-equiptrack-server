@@ -1,10 +1,10 @@
 [
   {
-    "versionCode": 8,
-    "versionName": "0.5.1",
-    "updateContent": "1. 修复：网络请求底层崩溃问题 (OkHttp State 0)，提升稳定性\n2. 优化：重写系统说明界面，采用 Material Design 3 风格与折叠动画\n3. 优化：新增权限矩阵可视化与核心安全规则说明\n4. 优化：改进 FAQ 与操作指南的信息层级",
-    "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.5.1/app-release.apk",
+    "versionCode": 9,
+    "versionName": "0.5.2",
+    "updateContent": "1. 借用流程支持现场照片上传和备注展示，审批可查看图片\n2. 新增高级用户审批权限，支持本部门借用与注册请求处理\n3. 部门树支持拖拽排序和层级调整，组织结构管理更灵活\n4. 新增震动强度调节并统一触觉反馈效果，操作手感可自定义\n5. 修复服务器配置页返回偶发白屏，并在返回前台时自动刷新设备列表",
+    "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.5.2/app-release.apk",
     "forceUpdate": false,
-    "releaseDate": "2026-01-06T00:00:00.000Z"
+    "releaseDate": "2026-01-07T00:00:00.000Z"
   }
 ]
