@@ -1,6 +1,6 @@
 import { app } from "./app";
 import { env } from "./config/env";
-import { initStore } from "./utils/store";
+import { AppDataSource } from "./data-source";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -32,12 +32,11 @@ function shutdown(signal: string) {
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-// Initialize data store then ensure server is live (for environments需要显式初始化)
-initStore().then(() => {
-  // no-op: app.ts 已调用，但这里再次确保（幂等）
-  logBoot("store initialized");
-}).catch(() => {
-  // eslint-disable-next-line no-console
-  console.warn("Failed to initialize data store at startup.");
-  logBoot("store initialization failed");
+// Initialize Database
+AppDataSource.initialize().then(() => {
+  console.log("Database initialized");
+  logBoot("database initialized");
+}).catch((err) => {
+  console.error("Failed to initialize database:", err);
+  logBoot("database initialization failed");
 });

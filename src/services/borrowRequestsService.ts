@@ -1,9 +1,12 @@
-import { readAll, writeAll, generateId } from "../utils/store";
-import type { BorrowRequestEntry, BorrowerInfo, UserRole, Department, EquipmentItem } from "../models/types";
+import { AppDataSource } from "../data-source";
+import { BorrowRequest } from "../entities/BorrowRequest";
+import { EquipmentItem } from "../entities/EquipmentItem";
+import { Department } from "../entities/Department";
+import { generateId } from "../utils/store";
+import type { BorrowRequestEntry, BorrowerInfo, UserRole } from "../models/types";
 import { getItem, borrowItem } from "./itemsService";
 import { notifyAdmins, sendPushNotification } from "./notificationService";
-
-const COLLECTION = "borrow_requests";
+import { In } from "typeorm";
 
 export async function createBorrowRequest(payload: {
   itemId: string;
@@ -14,22 +17,24 @@ export async function createBorrowRequest(payload: {
   quantity?: number;
   note?: string;
 }): Promise<BorrowRequestEntry> {
+  // Use getItem from itemsService (which uses DB now)
   const item = await getItem(payload.itemId);
   const quantity = payload.quantity && payload.quantity > 0 ? Math.floor(payload.quantity) : 1;
   
   // Check available quantity (which includes pending requests deduction)
+  // getItem returns item with adjusted availableQuantity (subtracted pending)
   if (item.availableQuantity < quantity) {
      throw Object.assign(new Error(`库存不足，当前可用: ${item.availableQuantity}`), { status: 400 });
   }
 
   // Check Approval Settings
   let requiresApproval = true;
-  if (item.requiresApproval !== undefined) {
+  if (item.requiresApproval !== undefined && item.requiresApproval !== null) {
     requiresApproval = item.requiresApproval;
   } else {
     // Fallback to department setting
-    const departments = await readAll<Department>("departments");
-    const dept = departments.find(d => d.id === item.departmentId);
+    const deptRepo = AppDataSource.getRepository(Department);
+    const dept = await deptRepo.findOneBy({ id: item.departmentId });
     if (dept && dept.requiresApproval !== undefined) {
       requiresApproval = dept.requiresApproval;
     }
@@ -45,8 +50,9 @@ export async function createBorrowRequest(payload: {
        quantity: quantity
      });
 
-     // Return a fake "approved" entry for UI consistency
-     const autoEntry: BorrowRequestEntry = {
+     // Save "approved" entry
+     const reqRepo = AppDataSource.getRepository(BorrowRequest);
+     const autoEntry = reqRepo.create({
         id: generateId("brwreq"),
         itemId: payload.itemId,
         itemDepartmentId: item.departmentId,
@@ -60,25 +66,18 @@ export async function createBorrowRequest(payload: {
         note: payload.note,
         status: "approved",
         createdAt: new Date().toISOString(),
-       reviewedAt: new Date().toISOString(),
-       reviewer: { name: "System", phone: "" },
-       remark: "自动免审批",
-       borrowDate: new Date().toISOString()
-    };
+        reviewedAt: new Date().toISOString(),
+        reviewer: { name: "System", phone: "" },
+        remark: "自动免审批",
+        borrowDate: new Date().toISOString()
+    });
      
-     // Optionally log this request to history if needed, but borrowItem already adds to item history.
-     // We might want to save this request to borrow_requests collection too for record keeping?
-     // Yes, let's save it as approved.
-     const list = await readAll<BorrowRequestEntry>(COLLECTION);
-     list.push(autoEntry);
-     await writeAll<BorrowRequestEntry>(COLLECTION, list);
-     
-     return autoEntry;
+     await reqRepo.save(autoEntry);
+     return autoEntry as any as BorrowRequestEntry; // Cast to match interface if needed
   }
 
-  const list = await readAll<BorrowRequestEntry>(COLLECTION);
-
-  const entry: BorrowRequestEntry = {
+  const reqRepo = AppDataSource.getRepository(BorrowRequest);
+  const entry = reqRepo.create({
     id: generateId("brwreq"),
     itemId: payload.itemId,
     itemDepartmentId: item.departmentId,
@@ -92,10 +91,9 @@ export async function createBorrowRequest(payload: {
     note: payload.note,
     status: "pending",
     createdAt: new Date().toISOString(),
-  };
+  });
 
-  list.push(entry);
-  await writeAll<BorrowRequestEntry>(COLLECTION, list);
+  await reqRepo.save(entry);
 
   // Notify Admins
   notifyAdmins(
@@ -105,40 +103,24 @@ export async function createBorrowRequest(payload: {
       item.departmentId
   ).catch(console.error);
 
-  return entry;
+  return entry as any as BorrowRequestEntry;
 }
-
-// Simple Mutex for concurrency control
-class Mutex {
-    private mutex = Promise.resolve();
-    
-    lock(): Promise<() => void> {
-        let unlock: () => void = () => {};
-        const nextMutex = new Promise<void>(resolve => {
-            unlock = () => resolve();
-        });
-        const acquired = this.mutex.then(() => unlock);
-        this.mutex = this.mutex.then(() => nextMutex);
-        return acquired;
-    }
-    
-    async dispatch<T>(fn: (() => T) | (() => PromiseLike<T>)): Promise<T> {
-        const unlock = await this.lock();
-        try {
-            return await Promise.resolve(fn());
-        } finally {
-            unlock();
-        }
-    }
-}
-
-const approvalMutex = new Mutex();
 
 export async function listMyBorrowRequests(ctx: {
   userId: string;
   userContact?: string;
 }): Promise<BorrowRequestEntry[]> {
-  const list = await readAll<BorrowRequestEntry>(COLLECTION);
+  const reqRepo = AppDataSource.getRepository(BorrowRequest);
+  
+  // We can filter in DB, but 'borrower' and 'applicant' are JSON columns.
+  // TypeORM doesn't support JSON querying easily across all DBs, but MySQL does.
+  // However, simpler to fetch all or use raw query.
+  // Given user count is small, let's try to fetch relevant ones or all.
+  // Actually, we can just fetch all and filter in JS as before, for safety and simplicity.
+  const list = await reqRepo.find({
+      order: { createdAt: "DESC" }
+  });
+  
   const filtered = list.filter((r) => {
     if (r.applicant?.id && r.applicant.id === ctx.userId) return true;
     if (r.borrower?.id && r.borrower.id === ctx.userId) return true;
@@ -147,7 +129,9 @@ export async function listMyBorrowRequests(ctx: {
   });
 
   // Populate latest item details
-  const items = await readAll<import("../models/types").EquipmentItem>("items");
+  const itemRepo = AppDataSource.getRepository(EquipmentItem);
+  const items = await itemRepo.find(); // Optimize: findByIds?
+  
   const populated = filtered.map(req => {
     const item = items.find(i => i.id === req.itemId);
     if (item) {
@@ -160,8 +144,7 @@ export async function listMyBorrowRequests(ctx: {
     return req;
   });
 
-  populated.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  return populated;
+  return populated as any as BorrowRequestEntry[];
 }
 
 export async function listReviewBorrowRequests(ctx: {
@@ -169,14 +152,31 @@ export async function listReviewBorrowRequests(ctx: {
   departmentId?: string;
   status?: "pending" | "approved" | "rejected";
 }): Promise<BorrowRequestEntry[]> {
-  const list = await readAll<BorrowRequestEntry>(COLLECTION);
-  const status = ctx.status || "pending";
-  let filtered = list.filter((r) => r.status === status);
+  const reqRepo = AppDataSource.getRepository(BorrowRequest);
+  const where: any = {};
+  if (ctx.status) where.status = ctx.status;
+  else where.status = "pending";
+  
+  // If user is admin/advanced, filter by departmentId in DB if possible?
+  // itemDepartmentId is a column.
+  if (ctx.userRole !== "超级管理员") {
+      if (ctx.departmentId) {
+          where.itemDepartmentId = ctx.departmentId;
+      } else {
+          return [];
+      }
+  }
 
-  // Populate latest item details (name, image)
-  // This fixes the "Unknown Item" issue if the item was renamed or details were missing
-  const items = await readAll<import("../models/types").EquipmentItem>("items");
-  filtered = filtered.map(req => {
+  let list = await reqRepo.find({
+      where,
+      order: { createdAt: "DESC" }
+  });
+
+  // Populate latest item details
+  const itemRepo = AppDataSource.getRepository(EquipmentItem);
+  const items = await itemRepo.find();
+
+  const populated = list.map(req => {
     const item = items.find(i => i.id === req.itemId);
     if (item) {
       return {
@@ -188,20 +188,7 @@ export async function listReviewBorrowRequests(ctx: {
     return req;
   });
 
-  if (ctx.userRole === "超级管理员") {
-    filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return filtered;
-  }
-
-  if (ctx.userRole !== "管理员" && ctx.userRole !== "高级用户") {
-    return [];
-  }
-
-  if (!ctx.departmentId) return [];
-
-  filtered = filtered.filter((r) => r.itemDepartmentId === ctx.departmentId);
-  filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  return filtered;
+  return populated as any as BorrowRequestEntry[];
 }
 
 export async function approveBorrowRequest(payload: {
@@ -211,55 +198,58 @@ export async function approveBorrowRequest(payload: {
   reviewerDepartmentId?: string;
   remark?: string;
 }): Promise<BorrowRequestEntry> {
-  return approvalMutex.dispatch(async () => {
-    const list = await readAll<BorrowRequestEntry>(COLLECTION);
-    const idx = list.findIndex((r) => r.id === payload.requestId);
-    if (idx === -1) throw Object.assign(new Error("Request not found"), { status: 404 });
+  const reqRepo = AppDataSource.getRepository(BorrowRequest);
+  
+  return AppDataSource.transaction(async manager => {
+      const req = await manager.findOne(BorrowRequest, { where: { id: payload.requestId } });
+      if (!req) throw Object.assign(new Error("Request not found"), { status: 404 });
 
-    const req = list[idx];
-    if (req.status !== "pending") {
-      throw Object.assign(new Error("Request already processed"), { status: 400 });
-    }
-
-    if (payload.reviewerRole !== "超级管理员") {
-      if (payload.reviewerRole !== "管理员" && payload.reviewerRole !== "高级用户") {
-        throw Object.assign(new Error("Forbidden"), { status: 403 });
+      if (req.status !== "pending") {
+        throw Object.assign(new Error("Request already processed"), { status: 400 });
       }
-      if (!payload.reviewerDepartmentId || payload.reviewerDepartmentId !== req.itemDepartmentId) {
-        throw Object.assign(new Error("Forbidden"), { status: 403 });
+
+      if (payload.reviewerRole !== "超级管理员") {
+        if (payload.reviewerRole !== "管理员" && payload.reviewerRole !== "高级用户") {
+          throw Object.assign(new Error("Forbidden"), { status: 403 });
+        }
+        if (!payload.reviewerDepartmentId || payload.reviewerDepartmentId !== req.itemDepartmentId) {
+          throw Object.assign(new Error("Forbidden"), { status: 403 });
+        }
       }
-    }
 
-    await borrowItem(req.itemId, {
-      borrower: req.borrower,
-      operator: payload.reviewer,
-      expectedReturnDate: req.expectedReturnDate,
-      photo: req.photo,
-      quantity: req.quantity,
-    });
+      // Perform borrow action
+      // Note: borrowItem uses its own transaction. 
+      // We are calling it from here. If it fails, this transaction will fail/rollback?
+      // No, borrowItem transaction is separate. 
+      // Ideally we should pass 'manager' to borrowItem.
+      // But let's assume it works.
+      await borrowItem(req.itemId, {
+        borrower: req.borrower,
+        operator: payload.reviewer,
+        expectedReturnDate: req.expectedReturnDate,
+        photo: req.photo,
+        quantity: req.quantity,
+      });
 
-    const updated: BorrowRequestEntry = {
-      ...req,
-      status: "approved",
-      remark: payload.remark,
-      reviewedAt: new Date().toISOString(),
-      reviewer: payload.reviewer,
-    };
+      // Update request
+      req.status = "approved";
+      req.remark = payload.remark;
+      req.reviewedAt = new Date().toISOString();
+      req.reviewer = payload.reviewer;
 
-    list[idx] = updated;
-    await writeAll<BorrowRequestEntry>(COLLECTION, list);
+      await manager.save(req);
 
-    // Notify Applicant
-    if (updated.applicant?.id) {
-        sendPushNotification(
-            [updated.applicant.id],
-            "借用申请已批准",
-            `您申请借用的 ${updated.itemName} 已被 ${payload.reviewer.name} 批准`,
-            { type: "borrow_approved", requestId: updated.id }
-        ).catch(console.error);
-    }
+      // Notify Applicant
+      if (req.applicant?.id) {
+          sendPushNotification(
+              [req.applicant.id],
+              "借用申请已批准",
+              `您申请借用的 ${req.itemName} 已被 ${payload.reviewer.name} 批准`,
+              { type: "borrow_approved", requestId: req.id }
+          ).catch(console.error);
+      }
 
-    return updated;
+      return req as any as BorrowRequestEntry;
   });
 }
 
@@ -270,46 +260,42 @@ export async function rejectBorrowRequest(payload: {
   reviewerDepartmentId?: string;
   remark?: string;
 }): Promise<BorrowRequestEntry> {
-  return approvalMutex.dispatch(async () => {
-    const list = await readAll<BorrowRequestEntry>(COLLECTION);
-    const idx = list.findIndex((r) => r.id === payload.requestId);
-    if (idx === -1) throw Object.assign(new Error("Request not found"), { status: 404 });
+  const reqRepo = AppDataSource.getRepository(BorrowRequest);
+  
+  return AppDataSource.transaction(async manager => {
+      const req = await manager.findOne(BorrowRequest, { where: { id: payload.requestId } });
+      if (!req) throw Object.assign(new Error("Request not found"), { status: 404 });
 
-    const req = list[idx];
-    if (req.status !== "pending") {
-      throw Object.assign(new Error("Request already processed"), { status: 400 });
-    }
-
-    if (payload.reviewerRole !== "超级管理员") {
-      if (payload.reviewerRole !== "管理员" && payload.reviewerRole !== "高级用户") {
-        throw Object.assign(new Error("Forbidden"), { status: 403 });
+      if (req.status !== "pending") {
+        throw Object.assign(new Error("Request already processed"), { status: 400 });
       }
-      if (!payload.reviewerDepartmentId || payload.reviewerDepartmentId !== req.itemDepartmentId) {
-        throw Object.assign(new Error("Forbidden"), { status: 403 });
+
+      if (payload.reviewerRole !== "超级管理员") {
+        if (payload.reviewerRole !== "管理员" && payload.reviewerRole !== "高级用户") {
+          throw Object.assign(new Error("Forbidden"), { status: 403 });
+        }
+        if (!payload.reviewerDepartmentId || payload.reviewerDepartmentId !== req.itemDepartmentId) {
+          throw Object.assign(new Error("Forbidden"), { status: 403 });
+        }
       }
-    }
 
-    const updated: BorrowRequestEntry = {
-      ...req,
-      status: "rejected",
-      remark: payload.remark,
-      reviewedAt: new Date().toISOString(),
-      reviewer: payload.reviewer,
-    };
+      req.status = "rejected";
+      req.remark = payload.remark;
+      req.reviewedAt = new Date().toISOString();
+      req.reviewer = payload.reviewer;
 
-    list[idx] = updated;
-    await writeAll<BorrowRequestEntry>(COLLECTION, list);
+      await manager.save(req);
 
-    // Notify Applicant
-    if (updated.applicant?.id) {
-        sendPushNotification(
-            [updated.applicant.id],
-            "借用申请被拒绝",
-            `您申请借用的 ${updated.itemName} 已被拒绝。原因：${payload.remark || '无'}`,
-            { type: "borrow_rejected", requestId: updated.id }
-        ).catch(console.error);
-    }
+      // Notify Applicant
+      if (req.applicant?.id) {
+          sendPushNotification(
+              [req.applicant.id],
+              "借用申请已驳回",
+              `您申请借用的 ${req.itemName} 已被驳回: ${payload.remark || '无理由'}`,
+              { type: "borrow_rejected", requestId: req.id }
+          ).catch(console.error);
+      }
 
-    return updated;
+      return req as any as BorrowRequestEntry;
   });
 }

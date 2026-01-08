@@ -1,9 +1,10 @@
 import * as admin from 'firebase-admin';
-import { readAll, writeAll } from '../utils/store';
-import { DeviceToken, User } from '../models/types';
+import { AppDataSource } from "../data-source";
+import { DeviceToken } from "../entities/DeviceToken";
+import { User } from "../entities/User";
+import { In } from "typeorm";
 
 // Initialize Firebase Admin
-// We try to use environment variables for credentials or fallback to default application credentials
 try {
   if (process.env.FIREBASE_CREDENTIALS) {
      const serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
@@ -24,27 +25,26 @@ try {
   console.warn("[Notification] Failed to initialize Firebase Admin. Push notifications will be skipped.", error);
 }
 
-export async function registerDeviceToken(userId: string, token: string, platform: 'android' | 'ios' | 'web') {
-  const tokens = await readAll<DeviceToken>('device_tokens');
+export async function registerDeviceToken(userId: string, token: string, platform: 'android' | 'ios' | 'web' | string) {
+  const repo = AppDataSource.getRepository(DeviceToken);
+  let tokenEntry = await repo.findOneBy({ token });
   
-  // Check if token exists
-  const existingIndex = tokens.findIndex(t => t.token === token);
-  
-  if (existingIndex >= 0) {
+  if (tokenEntry) {
     // Update existing
-    tokens[existingIndex].userId = userId; // Update owner if changed
-    tokens[existingIndex].updatedAt = new Date().toISOString();
+    tokenEntry.userId = userId;
+    tokenEntry.updatedAt = new Date().toISOString();
+    await repo.save(tokenEntry);
   } else {
     // Add new
-    tokens.push({
+    tokenEntry = repo.create({
       userId,
       token,
       platform,
       updatedAt: new Date().toISOString()
     });
+    await repo.save(tokenEntry);
   }
   
-  await writeAll('device_tokens', tokens);
   console.log(`[Notification] Token registered for user ${userId}`);
 }
 
@@ -54,10 +54,9 @@ export async function sendPushNotification(userIds: string[], title: string, bod
     return;
   }
 
-  const tokens = await readAll<DeviceToken>('device_tokens');
-  const targetTokens = tokens
-    .filter(t => userIds.includes(t.userId))
-    .map(t => t.token);
+  const repo = AppDataSource.getRepository(DeviceToken);
+  const tokens = await repo.find({ where: { userId: In(userIds) } });
+  const targetTokens = tokens.map(t => t.token);
 
   if (targetTokens.length === 0) {
       console.log(`[Notification] No devices found for users: ${userIds.join(', ')}`);
@@ -96,6 +95,7 @@ export async function sendPushNotification(userIds: string[], title: string, bod
                 if (err && (err.code === 'messaging/invalid-registration-token' || err.code === 'messaging/registration-token-not-registered')) {
                      // We could remove this token from store
                      console.log(`[Notification] Invalid token detected: ${uniqueTokens[idx]}`);
+                     repo.delete({ token: uniqueTokens[idx] }).catch(console.error);
                 }
             }
         });
@@ -107,8 +107,18 @@ export async function sendPushNotification(userIds: string[], title: string, bod
 
 // Helper to notify admins
 export async function notifyAdmins(title: string, body: string, data?: Record<string, string>, targetDepartmentId?: string) {
-    const users = await readAll<User>('users');
-    const admins = users.filter(u => {
+    const userRepo = AppDataSource.getRepository(User);
+    
+    // Fetch all potential admins
+    const admins = await userRepo.find({
+        where: [
+            { role: '超级管理员' },
+            { role: '管理员' },
+            { role: '高级用户' }
+        ]
+    });
+
+    const targetUserIds = admins.filter(u => {
         if (u.role === '超级管理员') return true;
         if (u.role === '管理员' || u.role === '高级用户') {
             // If a specific department is targeted, only notify admins of that department
@@ -120,7 +130,7 @@ export async function notifyAdmins(title: string, body: string, data?: Record<st
         return false;
     }).map(u => u.id);
 
-    if (admins.length > 0) {
-        await sendPushNotification(admins, title, body, data);
+    if (targetUserIds.length > 0) {
+        await sendPushNotification(targetUserIds, title, body, data);
     }
 }

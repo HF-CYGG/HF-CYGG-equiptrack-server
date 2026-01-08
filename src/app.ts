@@ -7,7 +7,7 @@ import path from "path";
 import { env } from "./config/env";
 import { errorHandler, notFound } from "./middlewares/error";
 import api from "./routes/api";
-import { initStore } from "./utils/store";
+// import { initStore } from "./utils/store";
 
 const app = express();
 
@@ -41,9 +41,6 @@ app.get("/health", (_req, res) => {
 app.get("/docs", (_req, res) => {
   res.status(200).send("EquipTrack API docs are available in API_SPEC.md and docs/ directory.");
 });
-
-// Ensure data store initialized
-initStore().catch(() => {});
 
 // API router
 app.use("/api", api);

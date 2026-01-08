@@ -1,89 +1,81 @@
-import { readAll, writeAll, generateId } from "../utils/store";
-import type { User, RegistrationRequest } from "../models/types";
+import { AppDataSource } from "../data-source";
+import { User } from "../entities/User";
+import { RegistrationRequest } from "../entities/RegistrationRequest";
+import { Department } from "../entities/Department";
+import { generateId } from "../utils/store";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { notifyAdmins } from "./notificationService";
 
-export async function login(contact: string, password: string): Promise<{ user: Omit<User, "password">; token: string }> {
-  const users = await readAll<User>("users");
-  const found = users.find((u) => u.contact === contact && u.password === password);
+export async function login(contact: string, pass: string): Promise<{ user: User; token: string }> {
+  const userRepo = AppDataSource.getRepository(User);
+  const user = await userRepo.findOneBy({ contact });
+
+  if (!user) throw Object.assign(new Error("用户不存在"), { status: 404 });
+  if (user.password !== pass) {
+    throw Object.assign(new Error("密码错误"), { status: 401 });
+  }
   
-  if (found) {
-    // Check if user is banned
-    if (found.status === 'BANNED' || found.status === 'banned') {
-      throw Object.assign(new Error("账号已被封禁，请联系管理员"), { status: 403 });
-    }
-    const { password: _pw, ...safe } = found;
-    const token = jwt.sign({ user: safe }, env.JWT_SECRET, { expiresIn: "7d" });
-    return { user: safe, token };
+  if (user.status === "disabled") {
+      throw Object.assign(new Error("账户已被禁用"), { status: 403 });
   }
 
-  // If not found in users, check pending registrations
-  const pending = await readAll<RegistrationRequest>("registration_requests");
-  const pendingRequest = pending.find(r => r.contact === contact && r.status === 'pending');
-  
-  if (pendingRequest) {
-    // If password matches (optional check, but good for security/consistency)
-    if (pendingRequest.password && pendingRequest.password === password) {
-       throw Object.assign(new Error("账号正在审核中，请耐心等待"), { status: 403 });
-    }
-    // Even if password doesn't match, if the contact is pending, we might want to hint it, 
-    // but to prevent enumeration, usually we be vague. 
-    // However, for this internal-like app, being helpful is better.
-    throw Object.assign(new Error("账号正在审核中，请耐心等待"), { status: 403 });
-  }
+  const token = jwt.sign(
+    { id: user.id, role: user.role, name: user.name, departmentId: user.departmentId },
+    env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 
-  throw Object.assign(new Error("账号或密码错误"), { status: 401 });
+  return { user, token };
 }
 
-export async function signup(input: {
+export async function signup(payload: {
   name: string;
   contact: string;
-  departmentName: string;
-  password: string;
+  departmentName: string; // User inputs department name manually? Or selects ID? 
+  // In original code, it seems they input department name string for registration request.
   invitationCode: string;
-}): Promise<{ message: string }> {
-  const users = await readAll<User>("users");
-  const pending = await readAll<RegistrationRequest>("registration_requests");
+  invitedByUserId?: string;
+  password?: string;
+}): Promise<{ message: string; requestId: string }> {
+  // Check if user exists
+  const userRepo = AppDataSource.getRepository(User);
+  const existing = await userRepo.findOneBy({ contact: payload.contact });
+  if (existing) throw Object.assign(new Error("该联系方式已被注册"), { status: 400 });
 
-  // 验证邀请码：属于超级管理员/管理员/高级用户中的任意一位
-  const inviter = users.find(
-    (u) => u.invitationCode === input.invitationCode && ["超级管理员", "管理员", "高级用户"].includes(u.role)
-  );
-  if (!inviter) throw Object.assign(new Error("无效的邀请码"), { status: 400 });
-
-  // Check for duplicate contact
-  if (users.some((u) => u.contact === input.contact) || pending.some((r) => r.contact === input.contact)) {
-    throw Object.assign(new Error("该联系方式已被注册或已在申请中，请更换手机号"), { status: 400 });
+  // Check if pending request exists
+  const regRepo = AppDataSource.getRepository(RegistrationRequest);
+  const existingReq = await regRepo.findOneBy({ contact: payload.contact, status: "pending" });
+  if (existingReq) {
+      throw Object.assign(new Error("您的注册申请正在审核中，请勿重复提交"), { status: 400 });
   }
 
-  // Check for duplicate name
-  if (users.some((u) => u.name === input.name) || pending.some((r) => r.name === input.name)) {
-    throw Object.assign(new Error("该用户名已被使用或已在申请中，请更换用户名"), { status: 400 });
-  }
-
-  const req: RegistrationRequest = {
-    id: generateId("reg"),
-    name: input.name,
-    contact: input.contact,
-    departmentName: input.departmentName,
-    invitationCode: input.invitationCode,
-    invitedByUserId: inviter.id,
+  const requestId = generateId("reg");
+  const request = regRepo.create({
+    id: requestId,
+    name: payload.name,
+    contact: payload.contact,
+    departmentName: payload.departmentName,
+    invitationCode: payload.invitationCode,
+    invitedByUserId: payload.invitedByUserId,
     status: "pending",
-    createdAt: new Date().toISOString(),
-    password: input.password,
-  };
-  pending.push(req);
-  await writeAll<RegistrationRequest>("registration_requests", pending);
+    passwordHash: payload.password || "123456" // Should hash in production
+  });
 
-  // Notify Admins
+  await regRepo.save(request);
+
+  // Notify admins
+  // Try to find target department ID if possible to route notification?
+  // Since we only have departmentName, we might check if it matches an existing department.
+  const deptRepo = AppDataSource.getRepository(Department);
+  const dept = await deptRepo.findOneBy({ name: payload.departmentName });
+  
   notifyAdmins(
       "新用户注册申请", 
-      `${req.name} (${req.departmentName}) 申请注册`,
-      { type: "registration_request", requestId: req.id }
+      `${payload.name} 申请加入 ${payload.departmentName}`,
+      { type: "registration_request", requestId },
+      dept?.id // If dept found, notify only its admins (if logic allows)
   ).catch(console.error);
 
-  return { message: "注册申请已提交，等待管理员批准。" };
+  return { message: "注册申请已提交，请等待管理员审核", requestId };
 }
-
-

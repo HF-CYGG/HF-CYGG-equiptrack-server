@@ -254,7 +254,7 @@ api.get("/categories", async (_req, res, next) => {
 
 api.post("/categories", requireAdmin, async (req, res, next) => {
   try {
-    res.json(await addCategory(req.body));
+    res.json(await addCategory(req.body.name, req.body.color));
   } catch (err) {
     next(err);
   }
@@ -271,73 +271,23 @@ api.delete("/categories/:id", requireAdmin, async (req, res, next) => {
 // Items
 api.get("/items", async (req, res, next) => {
   try {
+    // listItems now handles pending quantity calculation and returns the view model
     const items = await listItems();
-    const borrowRequests = await readAll<BorrowRequestEntry>("borrow_requests");
-    const pendingMap = new Map<string, number>();
-    for (const r of borrowRequests) {
-      if (r.status !== "pending") continue;
-      const current = pendingMap.get(r.itemId) ?? 0;
-      pendingMap.set(r.itemId, current + (r.quantity || 1));
-    }
-    const itemsWithPending = items.map((item) => {
-      const pending = pendingMap.get(item.id) ?? 0;
-      const adjustedAvailable = item.availableQuantity - pending;
-      return {
-        ...item,
-        availableQuantity: adjustedAvailable > 0 ? adjustedAvailable : 0,
-        pendingApprovalQuantity: pending,
-      };
-    });
+    
     const ctx = (req as any).user as { role: UserRole; departmentId?: string };
     const userRole = ctx?.role as UserRole;
     
     let departmentId = ctx?.departmentId;
-    // Allow filtering by department for ALL users (Cross-department feature)
-    if (req.query.departmentId) {
-      departmentId = req.query.departmentId as string;
-    } else if (req.query.showAll === "true" || userRole === "超级管理员") {
-        // Explicitly show all or if super admin requests without specific ID
-        departmentId = undefined;
-    }
-    // If no query param and not explicitly showing all, default to user's department (current behavior preserved for initial load if needed)
-    // However, user wants "All users can cross-department". 
-    // So we should probably default to undefined (All) if the client logic handles the filtering?
-    // Or let the client decide. 
-    // Let's stick to: Use query param if present. If not, default to user's department (unless Super Admin).
-    // BUT, if the user selects "All Departments" in the UI, we need a way to say "No Filter".
-    // The client can send a specific flag or just rely on the filter logic.
-    // Let's allow overriding.
-    
-    if (req.query.departmentId) {
-        departmentId = req.query.departmentId as string;
-    }
-    // If the client sends departmentId="", it means "All" (if we treat empty string as no filter)
-    // But typically ID is non-empty.
-    
-    // Refined Logic:
-    // 1. If departmentId query param is provided, use it.
-    // 2. If not provided, use user's department (legacy/default).
-    // 3. BUT if user wants to see ALL, they might not send departmentId.
-    // We need a way to distinguish "Default to my dept" vs "Show me everything".
-    // Let's assume if the client is updated, it will send departmentId for specific view.
-    // If it wants all, maybe it sends a special value or we add a "scope=global" param?
-    // Simplest: If `departmentId` query param is present, use it. 
-    // If `departmentId` is NOT present, default to user's department (for safety/compatibility).
-    // To view ALL, the client should send `departmentId=all` or similar?
-    // Or just: "If user selects 'All', client sends no departmentId, BUT we need to bypass the default."
-    
-    // Let's change line 139 to undefined initially if we want to support global view by default?
-    // No, safer to default to ctx.departmentId.
-    // If client wants "All", it can send `departmentId=all` and we handle it? 
-    // Or just allow `departmentId` param to override.
     
     if (req.query.departmentId) {
         departmentId = req.query.departmentId as string;
         if (departmentId === "all") departmentId = undefined;
+    } else if (req.query.showAll === "true" || userRole === "超级管理员") {
+        departmentId = undefined;
     }
 
     const allAvailable = req.query.allAvailable === "true";
-    const filtered = filterItems(itemsWithPending, { userRole, departmentId, allAvailable });
+    const filtered = filterItems(items, { userRole, departmentId, allAvailable });
     res.json(filtered);
   } catch (err) {
     next(err);
@@ -543,8 +493,7 @@ api.get("/users", async (req, res, next) => {
       departmentId = undefined;
     }
 
-    const filtered = filterUsers(users, { userRole, departmentId });
-    // 不返回密码
+    const filtered = await filterUsers(users, { role: userRole, departmentId });
     res.json(filtered.map(({ password, ...u }) => u));
   } catch (err) {
     next(err);
@@ -653,7 +602,7 @@ api.delete("/users/:id", requireAdmin, async (req, res, next) => {
 api.get("/approvals", async (req, res, next) => {
   try {
     const ctx = (req as any).user as { id: string; role: UserRole; departmentId?: string };
-    const list = await listApprovals({ userId: ctx?.id, userRole: ctx?.role, departmentId: ctx?.departmentId });
+    const list = await listApprovals({ userRole: ctx.role, departmentId: ctx.departmentId });
     res.json(list);
   } catch (err) {
     next(err);
