@@ -37,5 +37,5 @@ export class EquipmentItem {
     requiresApproval?: boolean;
 
     @OneToMany(() => BorrowHistory, (history) => history.item, { cascade: true, eager: true })
-    borrowHistory: BorrowHistory[] = [];
+    borrowHistory!: BorrowHistory[];
 }

@@ -1,6 +1,7 @@
 import { app } from "./app";
 import { env } from "./config/env";
 import { AppDataSource } from "./data-source";
+import { migrateJsonToSqlIfNeeded } from "./sync_json_to_sql";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -33,9 +34,15 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 // Initialize Database
-AppDataSource.initialize().then(() => {
+AppDataSource.initialize().then(async () => {
   console.log("Database initialized");
   logBoot("database initialized");
+  try {
+    await migrateJsonToSqlIfNeeded();
+  } catch (err) {
+    console.error("JSON→SQL migration error:", err);
+    logBoot("json_to_sql_migration_failed");
+  }
 }).catch((err) => {
   console.error("Failed to initialize database:", err);
   logBoot("database initialization failed");
