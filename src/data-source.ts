@@ -1,9 +1,5 @@
 import "reflect-metadata";
 import { DataSource } from "typeorm";
-import { env } from "./config/env";
-import path from "path";
-
-// Entities will be imported here
 import { User } from "./entities/User";
 import { Department } from "./entities/Department";
 import { Category } from "./entities/Category";

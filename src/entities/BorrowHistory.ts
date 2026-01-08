@@ -36,6 +36,6 @@ export class BorrowHistory {
     @Column("simple-json", { nullable: true })
     operator?: { id?: string; name: string; phone: string };
 
-    @ManyToOne(() => EquipmentItem, (item) => item.borrowHistory)
+    @ManyToOne(() => EquipmentItem, (item: EquipmentItem) => item.borrowHistory)
     item!: EquipmentItem;
 }
