@@ -16,7 +16,7 @@ export const AppDataSource = new DataSource({
     username: process.env.MYSQL_USER || "yyh163",
     password: process.env.MYSQL_PASSWORD || "yyh020414",
     database: process.env.MYSQL_DATABASE || "EquipTrack",
-    synchronize: true, // Auto-create tables (Dev only, but useful for migration)
+    synchronize: false, // Auto-create tables (Dev only, but useful for migration)
     logging: false,
     entities: [
         User,

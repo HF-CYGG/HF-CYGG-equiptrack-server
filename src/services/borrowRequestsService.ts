@@ -128,12 +128,18 @@ export async function listMyBorrowRequests(ctx: {
     return false;
   });
 
-  // Populate latest item details
+  // Optimize Item Fetching
+  const itemIds = [...new Set(filtered.map(r => r.itemId))];
   const itemRepo = AppDataSource.getRepository(EquipmentItem);
-  const items = await itemRepo.find(); // Optimize: findByIds?
+  
+  let items: EquipmentItem[] = [];
+  if (itemIds.length > 0) {
+      items = await itemRepo.findBy({ id: In(itemIds) });
+  }
+  const itemMap = new Map(items.map(i => [i.id, i]));
   
   const populated = filtered.map(req => {
-    const item = items.find(i => i.id === req.itemId);
+    const item = itemMap.get(req.itemId);
     if (item) {
       return {
         ...req,
@@ -172,12 +178,18 @@ export async function listReviewBorrowRequests(ctx: {
       order: { createdAt: "DESC" }
   });
 
-  // Populate latest item details
+  // Optimize Item Fetching
+  const itemIds = [...new Set(list.map(r => r.itemId))];
   const itemRepo = AppDataSource.getRepository(EquipmentItem);
-  const items = await itemRepo.find();
+  
+  let items: EquipmentItem[] = [];
+  if (itemIds.length > 0) {
+      items = await itemRepo.findBy({ id: In(itemIds) });
+  }
+  const itemMap = new Map(items.map(i => [i.id, i]));
 
   const populated = list.map(req => {
-    const item = items.find(i => i.id === req.itemId);
+    const item = itemMap.get(req.itemId);
     if (item) {
       return {
         ...req,

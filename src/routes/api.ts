@@ -1,3 +1,5 @@
+import { AppDataSource } from "../data-source";
+import { BorrowHistory } from "../entities/BorrowHistory";
 import { Router } from "express";
 import { login, signup } from "../services/authService";
 import { listDepartments, addDepartment, updateDepartment, deleteDepartment, updateDepartmentStructure } from "../services/departmentsService";
@@ -630,71 +632,59 @@ api.delete("/approvals/:id", async (req, res, next) => {
 // History
 api.get("/history", async (req, res, next) => {
   try {
-    const items = await listItems();
-    const allHistory: any[] = [];
-    for (const item of items) {
-      if (item.borrowHistory && item.borrowHistory.length > 0) {
-        allHistory.push(
-          ...item.borrowHistory.map((h) => ({
-            ...h,
-            itemId: item.id,
-            itemName: item.name,
-            itemCategory: item.categoryId,
-            itemImage: item.photos?.[0],
-            departmentId: item.departmentId,
-            // Flatten borrower info for Android compatibility
-            borrowerName: h.borrower?.name || "未知借用人",
-            borrowerContact: h.borrower?.phone || "",
-            // Provide operator info
-            operatorUserId: h.operator?.id || "",
-            operatorName: h.operator?.name || "系统记录",
-            operatorContact: h.operator?.phone || ""
-          }))
-        );
-      }
-    }
-
     const ctx = (req as any).user as { id: string; role: UserRole; departmentId?: string; contact?: string };
+    const historyRepo = AppDataSource.getRepository(BorrowHistory);
+    
+    // 优化：直接查询 BorrowHistory 表，而不是遍历所有物资
+    let query = historyRepo.createQueryBuilder("history")
+        .leftJoinAndSelect("history.item", "item")
+        .orderBy("history.borrowDate", "DESC");
+
     const userId = ctx?.id;
     const userRole = ctx?.role;
-    const userDeptId = ctx?.departmentId;
-    const userContact = ctx?.contact;
+    const userContact = ctx?.contact || "";
     const filterDeptId = req.query.departmentId as string | undefined;
 
-    let filtered = allHistory;
-    
     if (userRole === "超级管理员") {
-        // Super Admin sees all, or filters by requested department
         if (filterDeptId) {
-            filtered = allHistory.filter(h => h.departmentId === filterDeptId);
+            query.where("item.departmentId = :deptId", { deptId: filterDeptId });
         }
     } else if (userRole === "管理员" || userRole === "高级用户") {
-        // Admin and Advanced User see their own department's history
-        if (userDeptId) {
-            filtered = allHistory.filter(h => h.departmentId === userDeptId);
+        if (ctx.departmentId) {
+            query.where("item.departmentId = :deptId", { deptId: ctx.departmentId });
         } else {
-            filtered = [];
+            return res.json([]);
         }
     } else {
-        // Normal User (or others) see ONLY their own records
+        // 普通用户：通过 JSON 字段过滤
+        // 注意：使用原生 SQL 提取 JSON
         if (userId) {
-             filtered = allHistory.filter((h) => {
-                 if (h.borrower?.id === userId) return true;
-                 if (userContact && h.borrower?.phone === userContact) return true;
-                 return false;
-             });
+             query.where(
+                "(JSON_EXTRACT(history.borrower, '$.id') = :userId OR JSON_EXTRACT(history.borrower, '$.phone') = :contact)",
+                { userId, contact: userContact }
+            );
         } else {
-             filtered = []; 
+             return res.json([]);
         }
     }
 
-    filtered.sort((a, b) => {
-        const timeA = new Date(a.borrowDate).getTime();
-        const timeB = new Date(b.borrowDate).getTime();
-        return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
-    });
+    const histories = await query.getMany();
 
-    res.json(filtered);
+    const response = histories.map(h => ({
+        ...h,
+        itemId: h.item?.id,
+        itemName: h.item?.name,
+        itemCategory: h.item?.categoryId,
+        itemImage: h.item?.photos?.[0] || h.item?.image,
+        departmentId: h.item?.departmentId,
+        borrowerName: h.borrower?.name || "未知借用人",
+        borrowerContact: h.borrower?.phone || "",
+        operatorUserId: h.operator?.id || "",
+        operatorName: h.operator?.name || "系统记录",
+        operatorContact: h.operator?.phone || ""
+    }));
+
+    res.json(response);
   } catch (err) {
     next(err);
   }
