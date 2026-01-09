@@ -486,7 +486,7 @@ api.get("/users", async (req, res, next) => {
     const users = await listUsers();
     const ctx = (req as any).user as { role: UserRole; departmentId?: string };
     const userRole = ctx?.role as UserRole;
-    
+
     let departmentId = ctx?.departmentId;
     // Super Admin can filter by department via query param
     if (userRole === "超级管理员" && req.query.departmentId) {
@@ -495,7 +495,27 @@ api.get("/users", async (req, res, next) => {
       departmentId = undefined;
     }
 
-    const filtered = await filterUsers(users, { role: userRole, departmentId });
+    const filterOpts: { role?: UserRole; departmentId?: string } = {};
+
+    if (userRole === "超级管理员") {
+      // 超级管理员：默认查看全局；如带 departmentId，则只看指定部门
+      if (departmentId) {
+        filterOpts.departmentId = departmentId;
+      }
+    } else if (userRole === "管理员") {
+      // 管理员：查看本部门所有角色
+      if (departmentId) {
+        filterOpts.departmentId = departmentId;
+      }
+    } else {
+      // 其他角色（理论上不会访问用户管理），双重保险：只能看到与自己同角色、同部门的数据
+      filterOpts.role = userRole;
+      if (departmentId) {
+        filterOpts.departmentId = departmentId;
+      }
+    }
+
+    const filtered = await filterUsers(users, filterOpts);
     res.json(filtered.map(({ password, ...u }) => u));
   } catch (err) {
     next(err);
