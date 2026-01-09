@@ -16,7 +16,7 @@ export class EquipmentItem {
     departmentId: string = "";
 
     @Column()
-    totalQuantity: number = 0;
+    quantity: number = 0;
 
     @Column()
     availableQuantity: number = 0;

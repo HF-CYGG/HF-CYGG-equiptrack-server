@@ -24,10 +24,10 @@ export class BorrowHistory {
     @Column()
     status: string = "";
 
-    @Column({ nullable: true })
+    @Column({ type: "longtext", nullable: true })
     photo?: string;
 
-    @Column({ nullable: true })
+    @Column({ type: "longtext", nullable: true })
     returnPhoto?: string;
 
     @Column({ nullable: true })

@@ -67,7 +67,7 @@ export interface EquipmentItem {
   name: string;
   categoryId: string;
   departmentId: string;
-  totalQuantity: number;
+  quantity: number;
   availableQuantity: number;
   pendingApprovalQuantity?: number;
   image?: string; // Main image path

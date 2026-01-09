@@ -8,13 +8,33 @@ import { RegistrationRequest } from "./entities/RegistrationRequest";
 import { DeviceToken } from "./entities/DeviceToken";
 import { readAll } from "./utils/store";
 import { BorrowHistory } from "./entities/BorrowHistory";
+import { promises as fs } from "fs";
+import path from "path";
+
+async function writeSuccessFlag(dataDir: string, flagFile: string) {
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(flagFile, "success", "utf8");
+    console.log("[JSON→SQL] Migration success flag written.");
+    console.log("success");
+}
 
 export async function migrateJsonToSqlIfNeeded(): Promise<void> {
+    const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
+    const flagFile = path.join(dataDir, "json_to_sql_migration_success.flag");
+
+    try {
+        await fs.access(flagFile);
+        console.log("[JSON→SQL] Success flag detected, skip migration.");
+        return;
+    } catch {
+    }
+
     const userRepo = AppDataSource.getRepository(User);
     const existingUsers = await userRepo.count();
 
     if (existingUsers > 0) {
         console.log("[JSON→SQL] Skip migration: database already has users.");
+        await writeSuccessFlag(dataDir, flagFile);
         return;
     }
 
@@ -37,6 +57,7 @@ export async function migrateJsonToSqlIfNeeded(): Promise<void> {
 
     if (totalRecords === 0) {
         console.log("[JSON→SQL] No legacy JSON data found, skip migration.");
+        await writeSuccessFlag(dataDir, flagFile);
         return;
     }
 
@@ -66,8 +87,25 @@ export async function migrateJsonToSqlIfNeeded(): Promise<void> {
     console.log(`[JSON→SQL] Migrated ${regs.length} registration requests.`);
 
     const reqRepo = AppDataSource.getRepository(BorrowRequest);
-    for (const r of reqs) {
-        await reqRepo.save(r);
+    for (const raw of reqs as any[]) {
+        // 兼容旧数据：有的版本只有 applicant，没有 borrower
+        const entity = reqRepo.create();
+        Object.assign(entity, raw);
+
+        if (!entity.applicant && (raw as any).borrower) {
+            entity.applicant = (raw as any).borrower;
+        }
+        if (!entity.borrower && entity.applicant) {
+            entity.borrower = entity.applicant;
+        }
+        if (!entity.borrower) {
+            entity.borrower = { name: "", phone: "" };
+        }
+        if (!entity.applicant) {
+            entity.applicant = { name: "", phone: "" };
+        }
+
+        await reqRepo.save(entity);
     }
     console.log(`[JSON→SQL] Migrated ${reqs.length} borrow requests.`);
 
@@ -98,6 +136,8 @@ export async function migrateJsonToSqlIfNeeded(): Promise<void> {
     }
     console.log(`[JSON→SQL] Migrated ${items.length} items with history.`);
     console.log("[JSON→SQL] Migration complete.");
+
+    await writeSuccessFlag(dataDir, flagFile);
 }
 
 if (require.main === module) {

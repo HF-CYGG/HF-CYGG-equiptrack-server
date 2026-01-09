@@ -26,7 +26,7 @@ export class BorrowRequest {
     @Column()
     expectedReturnDate: string = "";
 
-    @Column({ nullable: true })
+    @Column({ type: "longtext", nullable: true })
     photo?: string;
 
     @Column()

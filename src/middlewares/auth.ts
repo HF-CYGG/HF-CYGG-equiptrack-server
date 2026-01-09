@@ -11,7 +11,8 @@ export function authGuard(req: Request, res: Response, next: NextFunction) {
   const token = header.slice(7);
   try {
     const payload = jwt.verify(token, env.JWT_SECRET) as any;
-    (req as any).user = payload.user as Omit<User, "password">;
+    // payload 直接包含了用户信息 { id, role, ... }，而不是 payload.user
+    (req as any).user = payload;
     next();
   } catch (e) {
     return res.status(401).json({ message: "Unauthorized" });
