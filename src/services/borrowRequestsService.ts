@@ -111,34 +111,41 @@ export async function listMyBorrowRequests(ctx: {
   userContact?: string;
 }): Promise<BorrowRequestEntry[]> {
   const reqRepo = AppDataSource.getRepository(BorrowRequest);
-  
-  // We can filter in DB, but 'borrower' and 'applicant' are JSON columns.
-  // TypeORM doesn't support JSON querying easily across all DBs, but MySQL does.
-  // However, simpler to fetch all or use raw query.
-  // Given user count is small, let's try to fetch relevant ones or all.
-  // Actually, we can just fetch all and filter in JS as before, for safety and simplicity.
-  const list = await reqRepo.find({
-      order: { createdAt: "DESC" }
-  });
-  
-  const filtered = list.filter((r) => {
-    if (r.applicant?.id && r.applicant.id === ctx.userId) return true;
-    if (r.borrower?.id && r.borrower.id === ctx.userId) return true;
-    if (ctx.userContact && r.borrower?.phone === ctx.userContact) return true;
-    return false;
-  });
+
+  // 优化：在数据库层通过 JSON_EXTRACT 过滤申请人/借用人，减少无关记录扫描
+  const qb = reqRepo
+    .createQueryBuilder("req")
+    .orderBy("req.createdAt", "DESC");
+
+  const params: any = {
+    userId: ctx.userId,
+  };
+
+  const conditions: string[] = [
+    "JSON_EXTRACT(req.applicant, '$.id') = :userId",
+    "JSON_EXTRACT(req.borrower, '$.id') = :userId",
+  ];
+
+  if (ctx.userContact) {
+    params.contact = ctx.userContact;
+    conditions.push("JSON_EXTRACT(req.borrower, '$.phone') = :contact");
+  }
+
+  qb.where(conditions.join(" OR "), params);
+
+  const filtered = await qb.getMany();
 
   // Optimize Item Fetching
-  const itemIds = [...new Set(filtered.map(r => r.itemId))];
+  const itemIds = [...new Set(filtered.map((r) => r.itemId))];
   const itemRepo = AppDataSource.getRepository(EquipmentItem);
   
   let items: EquipmentItem[] = [];
   if (itemIds.length > 0) {
-      items = await itemRepo.findBy({ id: In(itemIds) });
+    items = await itemRepo.findBy({ id: In(itemIds) });
   }
-  const itemMap = new Map(items.map(i => [i.id, i]));
+  const itemMap = new Map(items.map((i) => [i.id, i]));
   
-  const populated = filtered.map(req => {
+  const populated = filtered.map((req) => {
     const item = itemMap.get(req.itemId);
     if (item) {
       return {
