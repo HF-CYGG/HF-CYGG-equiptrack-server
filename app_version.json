@@ -1,10 +1,10 @@
 [
   {
-    "versionCode": 9,
-    "versionName": "0.5.2",
-    "updateContent": "1. 借用流程支持现场照片上传和备注展示，审批可查看图片\n2. 新增高级用户审批权限，支持本部门借用与注册请求处理\n3. 部门树支持拖拽排序和层级调整，组织结构管理更灵活\n4. 新增震动强度调节并统一触觉反馈效果，操作手感可自定义\n5. 修复服务器配置页返回偶发白屏，并在返回前台时自动刷新设备列表",
-    "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.5.2/app-release.apk",
+    "versionCode": 10,
+    "versionName": "0.5.3",
+    "updateContent": "1. 新增应用内版本更新功能，支持自动检查并下载新版本\n2. 优化更新下载流程和错误处理，提供更清晰的失败提示\n3. 引入 MySQL 持久化与从 JSON 自动迁移数据，提升数据安全性\n4. 修复同步过程中因字段为空导致的崩溃问题，增强数据容错\n5. 优化设备、部门、用户列表的自动刷新节奏和加载体验\n6. 重构侧边导航抽屉布局与配色，新增底部设置入口，界面更易用",
+    "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.5.3/app-release.apk",
     "forceUpdate": false,
-    "releaseDate": "2026-01-07T00:00:00.000Z"
+    "releaseDate": "2026-01-15T00:00:00.000Z"
   }
 ]
