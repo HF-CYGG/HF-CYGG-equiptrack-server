@@ -9,6 +9,10 @@ import { BorrowRequest } from "./entities/BorrowRequest";
 import { RegistrationRequest } from "./entities/RegistrationRequest";
 import { DeviceToken } from "./entities/DeviceToken";
 
+const shouldSynchronize =
+    process.env.TYPEORM_SYNCHRONIZE === "true" ||
+    process.env.DB_SYNCHRONIZE === "true";
+
 export const AppDataSource = new DataSource({
     type: "mysql",
     host: process.env.MYSQL_HOST || "localhost",
@@ -16,7 +20,7 @@ export const AppDataSource = new DataSource({
     username: process.env.MYSQL_USER || "yyh163",
     password: process.env.MYSQL_PASSWORD || "yyh020414",
     database: process.env.MYSQL_DATABASE || "EquipTrack",
-    synchronize: false, // Auto-create tables (Dev only, but useful for migration)
+    synchronize: shouldSynchronize,
     logging: false,
     entities: [
         User,
