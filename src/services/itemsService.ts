@@ -11,44 +11,37 @@ import { In } from "typeorm";
 
 export async function listItems(): Promise<EquipmentItem[]> {
   const itemRepo = AppDataSource.getRepository(EquipmentItem);
-  const reqRepo = AppDataSource.getRepository(BorrowRequest);
   const deptRepo = AppDataSource.getRepository(Department);
 
-  const items = await itemRepo.find({
-    relations: ["borrowHistory"]
-  });
+  // 1. Fetch all items (without history, thanks to eager: false)
+  const items = await itemRepo.find();
   
-  const pendingRequests = await reqRepo.find({
-    where: { status: "pending" }
-  });
+  // 2. Aggregate pending requests directly in DB for performance
+  const pendingCounts = await AppDataSource.getRepository(BorrowRequest)
+    .createQueryBuilder("req")
+    .select("req.itemId", "itemId")
+    .addSelect("SUM(req.quantity)", "total")
+    .where("req.status = :status", { status: "pending" })
+    .groupBy("req.itemId")
+    .getRawMany(); 
 
-  const departments = await deptRepo.find();
-  
-  // Calculate pending quantities map
   const pendingMap = new Map<string, number>();
-  for (const req of pendingRequests) {
-    const current = pendingMap.get(req.itemId) || 0;
-    pendingMap.set(req.itemId, current + req.quantity);
-  }
+  pendingCounts.forEach(p => pendingMap.set(p.itemId, Number(p.total)));
+
+  // 3. Fetch departments for approval rules
+  const departments = await deptRepo.find();
+  const deptMap = new Map(departments.map(d => [d.id, d]));
   
-  // Update items with pending quantity and adjust available quantity
-  // Note: We return modified instances, but don't save them to DB here (calculated fields)
+  // 4. Merge data
   return items.map(item => {
     const pendingQty = pendingMap.get(item.id) || 0;
     
     // Resolve effective requiresApproval
     let effectiveRequiresApproval = item.requiresApproval;
     if (effectiveRequiresApproval === undefined || effectiveRequiresApproval === null) {
-        const dept = departments.find(d => d.id === item.departmentId);
+        const dept = deptMap.get(item.departmentId);
         effectiveRequiresApproval = dept?.requiresApproval ?? true;
     }
-
-    // Clone or modify? Modifying the entity instance is fine as long as we don't save it back with these computed values 
-    // if they are not columns. availableQuantity IS a column, but here we want "displayed available".
-    // Actually, availableQuantity in DB should be the real available. 
-    // The logic in original code:
-    // availableQuantity = Math.max(0, item.availableQuantity - pendingQty)
-    // This implies DB stores "physically available", but UI shows "available considering pending".
     
     return {
       ...item,
@@ -147,7 +140,9 @@ export async function borrowItem(
 ): Promise<EquipmentItem> {
   return AppDataSource.transaction(async transactionalEntityManager => {
       const itemRepo = transactionalEntityManager.getRepository(EquipmentItem);
-      const item = await itemRepo.findOne({ where: { id }, relations: ["borrowHistory"] });
+      const histRepo = transactionalEntityManager.getRepository(BorrowHistory);
+      
+      const item = await itemRepo.findOne({ where: { id } }); // Removed relations: ["borrowHistory"]
       
       if (!item) throw Object.assign(new Error("Item not found"), { status: 404 });
       
@@ -170,13 +165,8 @@ export async function borrowItem(
         history.status = "借用中";
         history.photo = payload.photo;
         
-        // Push to item relation (if using cascade)
-        // Or save directly
-        // item.borrowHistory.push(history); 
-        // Better to save history explicitly if we didn't enable cascade insert on update
-        // We enabled cascade: true in EquipmentItem entity.
-        if (!item.borrowHistory) item.borrowHistory = [];
-        item.borrowHistory.push(history);
+        // Save history directly
+        await histRepo.save(history);
       }
       
       item.availableQuantity -= quantity;
@@ -193,11 +183,13 @@ export async function returnItem(
 ): Promise<EquipmentItem> {
   return AppDataSource.transaction(async transactionalEntityManager => {
       const itemRepo = transactionalEntityManager.getRepository(EquipmentItem);
-      const item = await itemRepo.findOne({ where: { id: itemId }, relations: ["borrowHistory"] });
+      const histRepo = transactionalEntityManager.getRepository(BorrowHistory);
+      
+      const item = await itemRepo.findOne({ where: { id: itemId } }); // Removed relations: ["borrowHistory"]
       
       if (!item) throw Object.assign(new Error("Item not found"), { status: 404 });
       
-      const entry = item.borrowHistory.find(h => h.id === historyEntryId);
+      const entry = await histRepo.findOne({ where: { id: historyEntryId, itemId } });
       if (!entry) throw Object.assign(new Error("Borrow history not found"), { status: 404 });
       
       if (!(entry.status === "借用中" || entry.status === "逾期未归还")) {
@@ -217,7 +209,8 @@ export async function returnItem(
       if (payload.isForced && payload.adminName) entry.forcedReturnBy = payload.adminName;
       if (payload.photo) entry.returnPhoto = payload.photo;
       
-      // Save item (cascades to history)
+      // Save both
+      await histRepo.save(entry);
       await itemRepo.save(item);
       return item;
   });

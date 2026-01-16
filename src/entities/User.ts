@@ -1,4 +1,4 @@
-import { Entity, PrimaryColumn, Column } from "typeorm";
+import { Entity, PrimaryColumn, Column, Index } from "typeorm";
 import type { UserRole } from "../models/types";
 
 @Entity()
@@ -9,9 +9,11 @@ export class User {
     @Column()
     name: string = "";
 
+    @Index()
     @Column()
     contact: string = "";
 
+    @Index()
     @Column()
     departmentId: string = "";
 

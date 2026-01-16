@@ -1,4 +1,4 @@
-import { Entity, PrimaryColumn, Column, OneToMany } from "typeorm";
+import { Entity, PrimaryColumn, Column, OneToMany, Index } from "typeorm";
 import { BorrowHistory } from "./BorrowHistory";
 
 @Entity()
@@ -9,9 +9,11 @@ export class EquipmentItem {
     @Column()
     name: string = "";
 
+    @Index()
     @Column()
     categoryId: string = "";
 
+    @Index()
     @Column()
     departmentId: string = "";
 
@@ -36,6 +38,6 @@ export class EquipmentItem {
     @Column({ nullable: true })
     requiresApproval?: boolean;
 
-    @OneToMany(() => BorrowHistory, (history) => history.item, { cascade: true, eager: true })
+    @OneToMany(() => BorrowHistory, (history) => history.item, { cascade: true })
     borrowHistory!: BorrowHistory[];
 }

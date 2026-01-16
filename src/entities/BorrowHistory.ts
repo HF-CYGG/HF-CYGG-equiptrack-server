@@ -1,4 +1,4 @@
-import { Entity, PrimaryColumn, Column, ManyToOne } from "typeorm";
+import { Entity, PrimaryColumn, Column, ManyToOne, Index } from "typeorm";
 import { EquipmentItem } from "./EquipmentItem";
 
 @Entity()
@@ -6,18 +6,21 @@ export class BorrowHistory {
     @PrimaryColumn()
     id: string = "";
 
+    @Index()
     @Column()
     itemId: string = "";
 
     @Column("simple-json")
     borrower: { id?: string; name: string; phone: string } = { name: "", phone: "" };
 
+    @Index()
     @Column()
     borrowDate: string = "";
 
     @Column()
     expectedReturnDate: string = "";
 
+    @Index()
     @Column({ nullable: true })
     returnDate?: string;
 
