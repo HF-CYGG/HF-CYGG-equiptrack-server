@@ -1,9 +1,9 @@
 [
   {
-    "versionCode": 11,
-    "versionName": "0.5.4",
-    "updateContent": "1. 相机功能重大升级：新增相册导入、前后摄切换、点按对焦、缩放及照片预览确认功能\n2. 界面体验优化：调整借用记录页面布局，减少顶部留白，视觉更紧凑\n3. 性能与交互改进：统一并优化下拉刷新动画，提升操作流畅度\n4. 问题修复：修复部分图标显示异常及服务器连接稳定性问题",
-    "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.5.4/app-release.apk",
+    "versionCode": 12,
+    "versionName": "0.5.4_24430a9",
+    "updateContent": "1. 头像功能调整：仅支持本地修改，提升响应速度\n2. 下载更新修复：解决部分机型下载后无法自动跳转安装的问题\n3. 界面优化：全新设计的个人中心页面\n4. 紧急修复：修复了一些异常",
+    "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.5.4_24430a9/app-release.apk",
     "forceUpdate": false,
     "releaseDate": "2026-01-17T00:00:00.000Z"
   }
