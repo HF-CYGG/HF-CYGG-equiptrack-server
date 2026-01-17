@@ -101,8 +101,11 @@ export async function updateItem(id: string, input: Partial<EquipmentItem>): Pro
   let item = await itemRepo.findOneBy({ id });
   if (!item) throw Object.assign(new Error("Item not found"), { status: 404 });
   
+  // Remove borrowHistory from input to prevent accidental relation updates
+  const { borrowHistory, ...updateData } = input;
+  
   // Merge input into item
-  itemRepo.merge(item, input);
+  itemRepo.merge(item, updateData);
   
   await itemRepo.save(item);
   return item;
