@@ -34,4 +34,7 @@ export class User {
 
     @Column({ nullable: true })
     avatarUrl?: string;
+
+    @Column({ nullable: true })
+    banReason?: string;
 }
