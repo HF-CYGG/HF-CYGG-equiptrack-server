@@ -2,9 +2,10 @@
   {
     "versionCode": 12,
     "versionName": "0.5.4_24430a9",
-    "updateContent": "1. 头像功能调整：仅支持本地修改，提升响应速度\n2. 下载更新修复：解决部分机型下载后无法自动跳转安装的问题\n3. 界面优化：全新设计的个人中心页面\n4. 紧急修复：修复了一些异常",
+    "updateContent": "1. 头像功能调整：仅支持本地修改，提升响应速度\n2. 下载更新修复：解决部分机型下载后无法自动跳转安装的问题\n3. 界面优化：全新设计的个人中心页面\n4. 紧急修复：修复 ASM 插桩导致的构建错误",
     "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.5.4_24430a9/app-release.apk",
     "forceUpdate": false,
-    "releaseDate": "2026-01-17T00:00:00.000Z"
+    "releaseDate": "2026-01-17T00:00:00.000Z",
+    "updateType": "urgent"
   }
 ]
