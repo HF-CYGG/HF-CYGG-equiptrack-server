@@ -14,12 +14,14 @@ try {
         });
         console.log("[Notification] Firebase Admin initialized with credentials");
      }
-  } else {
+  } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
      // Try default initialization (works if GOOGLE_APPLICATION_CREDENTIALS is set)
      if (admin.apps.length === 0) {
         admin.initializeApp();
         console.log("[Notification] Firebase Admin initialized with default credentials");
      }
+  } else {
+     console.log("[Notification] No credentials found. Firebase Admin NOT initialized. Notifications will be mocked.");
   }
 } catch (error) {
   console.warn("[Notification] Failed to initialize Firebase Admin. Push notifications will be skipped.", error);

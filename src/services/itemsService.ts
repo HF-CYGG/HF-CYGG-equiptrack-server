@@ -157,6 +157,7 @@ export async function borrowItem(
       }
 
       // Create history entries
+      const histories: BorrowHistory[] = [];
       for (let i = 0; i < quantity; i++) {
         const history = new BorrowHistory();
         history.id = generateId("hist");
@@ -170,9 +171,11 @@ export async function borrowItem(
         history.remark = payload.remark;
         history.note = payload.note;
         
-        // Save history directly
-        await histRepo.save(history);
+        histories.push(history);
       }
+      
+      // Bulk save history
+      await histRepo.save(histories);
       
       item.availableQuantity -= quantity;
       

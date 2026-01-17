@@ -1,4 +1,4 @@
-import { Entity, PrimaryColumn, Column } from "typeorm";
+import { Entity, PrimaryColumn, Column, CreateDateColumn } from "typeorm";
 
 @Entity()
 export class RegistrationRequest {
@@ -22,6 +22,9 @@ export class RegistrationRequest {
 
     @Column()
     status: string = "";
+
+    @CreateDateColumn()
+    createdAt: Date = new Date();
 
     @Column()
     passwordHash: string = "";

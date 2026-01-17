@@ -2,6 +2,7 @@ import { app } from "./app";
 import { env } from "./config/env";
 import { AppDataSource } from "./data-source";
 import { migrateJsonToSqlIfNeeded } from "./sync_json_to_sql";
+import { ensureDatabaseSchema } from "./utils/schema_fix";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -37,6 +38,10 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 AppDataSource.initialize().then(async () => {
   console.log("Database initialized");
   logBoot("database initialized");
+  
+  // Ensure schema is up to date (for environments without auto-sync)
+  await ensureDatabaseSchema();
+
   try {
     await migrateJsonToSqlIfNeeded();
   } catch (err) {
