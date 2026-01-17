@@ -32,6 +32,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/avatars", express.static(path.join(process.cwd(), "data", "avatars")));
 
+// Root route
+app.get("/", (_req, res) => {
+  res.status(200).send("EquipTrack Server Running");
+});
+
 // Health check
 app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok", env: env.NODE_ENV });
