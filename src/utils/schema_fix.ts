@@ -41,6 +41,14 @@ export async function ensureDatabaseSchema() {
             await queryRunner.query("ALTER TABLE `borrow_request` ADD COLUMN `reviewedAt` VARCHAR(255) NULL");
             console.log("[SchemaFix] Column 'reviewedAt' added successfully.");
         }
+
+        // Fix 5: Ensure User has banReason column
+        const hasBanReason = await queryRunner.hasColumn("user", "banReason");
+        if (!hasBanReason) {
+            console.log("[SchemaFix] Adding missing column 'banReason' to 'user'...");
+            await queryRunner.query("ALTER TABLE `user` ADD COLUMN `banReason` TEXT NULL");
+            console.log("[SchemaFix] Column 'banReason' added successfully.");
+        }
         
     } catch (error) {
         console.error("[SchemaFix] Error checking/fixing schema:", error);
