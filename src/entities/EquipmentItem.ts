@@ -23,6 +23,9 @@ export class EquipmentItem {
     @Column()
     availableQuantity: number = 0;
 
+    @Column({ type: "text", nullable: true })
+    description?: string;
+
     @Column({ nullable: true })
     pendingApprovalQuantity?: number;
 
