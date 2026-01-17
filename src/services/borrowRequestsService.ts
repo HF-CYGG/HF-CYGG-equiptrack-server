@@ -248,6 +248,8 @@ export async function approveBorrowRequest(payload: {
         expectedReturnDate: req.expectedReturnDate,
         photo: req.photo,
         quantity: req.quantity,
+        remark: payload.remark,
+        note: req.note
       });
 
       // Update request

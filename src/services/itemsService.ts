@@ -139,7 +139,7 @@ export async function deleteItem(id: string): Promise<{ message: string }> {
 
 export async function borrowItem(
   id: string,
-  payload: { borrower: BorrowerInfo; operator?: BorrowerInfo; expectedReturnDate: string; photo?: string; quantity?: number }
+  payload: { borrower: BorrowerInfo; operator?: BorrowerInfo; expectedReturnDate: string; photo?: string; quantity?: number; remark?: string; note?: string }
 ): Promise<EquipmentItem> {
   return AppDataSource.transaction(async transactionalEntityManager => {
       const itemRepo = transactionalEntityManager.getRepository(EquipmentItem);
@@ -167,6 +167,8 @@ export async function borrowItem(
         history.expectedReturnDate = payload.expectedReturnDate;
         history.status = "借用中";
         history.photo = payload.photo;
+        history.remark = payload.remark;
+        history.note = payload.note;
         
         // Save history directly
         await histRepo.save(history);

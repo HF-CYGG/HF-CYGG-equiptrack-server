@@ -36,6 +36,12 @@ export class BorrowHistory {
     @Column({ nullable: true })
     forcedReturnBy?: string;
 
+    @Column({ type: "text", nullable: true })
+    remark?: string;
+
+    @Column({ type: "text", nullable: true })
+    note?: string;
+
     @Column("simple-json", { nullable: true })
     operator?: { id?: string; name: string; phone: string };
 
