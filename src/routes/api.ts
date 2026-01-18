@@ -306,6 +306,15 @@ api.get("/items/:id", async (req, res, next) => {
 
 api.post("/items", requireItemManagePermission, async (req, res, next) => {
   try {
+    const { name, categoryId, quantity, departmentId } = req.body;
+    if (!name || !categoryId || quantity === undefined || !departmentId) {
+       res.status(400).json({ message: "缺少必填字段 (name, categoryId, quantity, departmentId)" });
+       return;
+    }
+    if (typeof quantity !== 'number' || quantity < 0) {
+       res.status(400).json({ message: "quantity 必须为非负数字" });
+       return;
+    }
     res.json(await addItem(req.body));
   } catch (err) {
     next(err);
@@ -314,6 +323,11 @@ api.post("/items", requireItemManagePermission, async (req, res, next) => {
 
 api.put("/items/:id", requireItemManagePermission, async (req, res, next) => {
   try {
+    const { quantity } = req.body;
+    if (quantity !== undefined && (typeof quantity !== 'number' || quantity < 0)) {
+       res.status(400).json({ message: "quantity 必须为非负数字" });
+       return;
+    }
     res.json(await updateItem(req.params.id, req.body));
   } catch (err) {
     next(err);
