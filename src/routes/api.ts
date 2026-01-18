@@ -712,10 +712,10 @@ api.get("/history", async (req, res, next) => {
         itemImage: h.item?.photos?.[0] || h.item?.image,
         departmentId: h.item?.departmentId,
         borrowerName: h.borrower?.name || "未知借用人",
-        borrowerContact: h.borrower?.phone || "",
+        borrowerContact: (h.borrower as any)?.phone || (h.borrower as any)?.contact || "",
         operatorUserId: h.operator?.id || "",
         operatorName: h.operator?.name || "系统记录",
-        operatorContact: h.operator?.phone || ""
+        operatorContact: (h.operator as any)?.phone || (h.operator as any)?.contact || ""
     }));
 
     res.json(response);
