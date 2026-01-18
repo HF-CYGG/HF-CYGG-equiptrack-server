@@ -714,8 +714,14 @@ api.get("/history", async (req, res, next) => {
         borrowerName: h.borrower?.name || "未知借用人",
         borrowerContact: (h.borrower as any)?.phone || (h.borrower as any)?.contact || "",
         operatorUserId: h.operator?.id || "",
-        operatorName: h.operator?.name || "系统记录",
-        operatorContact: (h.operator as any)?.phone || (h.operator as any)?.contact || ""
+        operatorName:
+          typeof h.operator?.name === "string" && /auto-?approved/i.test(h.operator.name)
+            ? "自动审批"
+            : h.operator?.name || "系统记录",
+        operatorContact:
+          typeof h.operator?.name === "string" && /auto-?approved/i.test(h.operator.name)
+            ? ""
+            : (h.operator as any)?.phone || (h.operator as any)?.contact || ""
     }));
 
     res.json(response);
