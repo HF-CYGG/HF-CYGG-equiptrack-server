@@ -67,6 +67,10 @@ app.get("/docs", (_req, res) => {
   res.status(200).send("EquipTrack API docs are available in API_SPEC.md and docs/ directory.");
 });
 
+app.get(["/favicon.ico", "/sitemap.xml", "/security.txt"], (_req, res) => {
+  res.status(204).end();
+});
+
 // API 路由挂载
 app.use("/api", api);
 
