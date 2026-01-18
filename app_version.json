@@ -1,11 +1,11 @@
 [
   {
-    "versionCode": 12,
-    "versionName": "0.5.4_24430a9",
-    "updateContent": "1. 头像功能调整：仅支持本地修改，提升响应速度\n2. 下载更新修复：解决部分机型下载后无法自动跳转安装的问题\n3. 界面优化：全新设计的个人中心页面\n4. 紧急修复：修复 ASM 插桩导致的构建错误",
-    "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.5.4_24430a9/app-release.apk",
+    "versionCode": 13,
+    "versionName": "0.6.0",
+    "updateContent": "1. 历史记录：新增“非本人借用”提示、支持显示经办人信息，并兼容自动审批记录展示\n2. 历史记录：新增新记录提示与同步体验优化\n3. 归还对话框：布局与动效优化（MD3 动画交互）\n4. 审批界面：视觉与交互增强，支持审批备注\n5. 相机：支持横屏拍摄并改进拍照体验\n6. 主题设置：列表动画可选“无”，减少低性能设备负担\n7. 更新对话框：新增更新类型标签与动效，提示更清晰\n8. 用户管理：新增用户封禁相关能力",
+    "downloadUrl": "https://gitee.com/YeMiao_cats/EquipTrack/releases/download/v0.6.0/app-release.apk",
     "forceUpdate": false,
-    "releaseDate": "2026-01-17T00:00:00.000Z",
-    "updateType": "urgent"
+    "releaseDate": "2026-01-19T00:00:00.000Z",
+    "updateType": "feature"
   }
 ]

@@ -1,6 +1,6 @@
 {
   "name": "equiptrack-server",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "scripts": {
     "dev": "ts-node -r dotenv/config src/index.ts",
