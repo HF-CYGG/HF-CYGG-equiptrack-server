@@ -20,19 +20,19 @@ import rateLimit from "express-rate-limit";
 
 export const api = Router();
 
-// Rate limiter for login to prevent brute-force attacks
+// 登录频率限制：防止暴力破解
 const loginLimiter = rateLimit({
-	windowMs: 15 * 60 * 1000, // 15 minutes
-	max: 5, // Limit each IP to 5 requests per windowMs
+	windowMs: 15 * 60 * 1000, // 15分钟时间窗口
+	max: 5, // 每个IP限制5次请求
 	message: { message: "尝试登录次数过多，请15分钟后再试" },
 	standardHeaders: true,
 	legacyHeaders: false,
 });
 
-// System / App Version
+// 系统/应用版本信息接口
 api.get("/system/android-version", async (_req, res, next) => {
   try {
-    // Use __dirname to reliably locate app_version.json relative to the compiled file location
+    // 使用 __dirname 可靠地定位 app_version.json (相对于编译后的文件位置)
     // dist/routes/api.js -> ../../app_version.json
     const versionPath = path.resolve(__dirname, "../../app_version.json");
     let versions: AppVersion[] = [];
@@ -40,23 +40,23 @@ api.get("/system/android-version", async (_req, res, next) => {
         const data = await fs.readFile(versionPath, "utf8");
         versions = JSON.parse(data);
     } catch (e) {
-        // Fallback or empty if file not found
+        // 如果文件未找到，则回退或为空
         console.error("Failed to read app_version.json", e);
     }
     
     const latest = versions[0];
     if (latest) {
-      // Auto-fill download URL if missing, using GitHub Release with CDN
+      // 如果缺少下载链接，自动填充为 GitHub Release 的 CDN 链接
       if (!latest.downloadUrl) {
         const tagName = latest.versionName.startsWith("v") ? latest.versionName : `v${latest.versionName}`;
-        // Standard APK name from build
+        // 标准构建的 APK 名称
         const originalUrl = `https://github.com/YeMiao_cats/EquipTrack/releases/download/${tagName}/app-release.apk`;
-        // Use Domestic Mirror for acceleration
+        // 使用国内镜像加速下载
         latest.downloadUrl = `https://mirror.ghproxy.com/${originalUrl}`;
       }
       res.json(latest);
     } else {
-      // Default / Initial state
+      // 默认/初始状态
       res.json({
         versionCode: 1,
         versionName: "1.0.0",
@@ -71,7 +71,7 @@ api.get("/system/android-version", async (_req, res, next) => {
   }
 });
 
-// Auth
+// 认证相关接口
 api.post("/login", loginLimiter, async (req, res, next) => {
   try {
     const { contact, password } = req.body || {};
@@ -91,15 +91,15 @@ api.post("/signup", async (req, res, next) => {
   }
 });
 
-// Public Data
+// 公共数据接口
 api.put("/departments/structure", authGuard, async (req, res, next) => {
   try {
-    // Only admins can update structure
+    // 仅管理员可更新部门结构
     const user = (req as any).user;
     if (user.role !== "超级管理员" && user.role !== "管理员") {
       throw Object.assign(new Error("无权操作"), { status: 403 });
     }
-    const updates = req.body; // Array of { id, parentId, order }
+    const updates = req.body; // 数组结构: { id, parentId, order }
     if (!Array.isArray(updates)) {
       throw Object.assign(new Error("Invalid input format"), { status: 400 });
     }
@@ -117,7 +117,7 @@ api.get("/departments", async (_req, res, next) => {
   }
 });
 
-// File Upload
+// 文件上传接口
 api.post("/upload", upload.single("file"), (req, res, next) => {
   try {
     if (!req.file) {
@@ -125,8 +125,8 @@ api.post("/upload", upload.single("file"), (req, res, next) => {
        return;
     }
     
-    // Determine relative path based on the actual destination
-    // This handles the dynamic subfolder logic from the upload middleware
+    // 根据实际存储位置确定相对路径
+    // 此处处理 upload 中间件的动态子文件夹逻辑
     const type = req.query.type || req.body.type;
     let subfolder = "others";
     let urlPrefix = "/uploads";
@@ -138,7 +138,7 @@ api.post("/upload", upload.single("file"), (req, res, next) => {
     else if (type === "borrow") subfolder = "borrows";
     else if (type === "avatar") {
       urlPrefix = "/avatars";
-      subfolder = ""; // avatars are served directly from /avatars/filename
+      subfolder = ""; // 头像直接从 /avatars/filename 提供服务
     }
     
     const fileUrl = subfolder 
@@ -151,10 +151,10 @@ api.post("/upload", upload.single("file"), (req, res, next) => {
   }
 });
 
-// Protect all routes below with JWT auth
+// 以下所有路由均受 JWT 认证保护
 api.use(authGuard);
 
-// Notifications
+// 通知注册接口
 api.post("/notifications/register", async (req, res, next) => {
   try {
     const { token, platform } = req.body;
@@ -162,7 +162,7 @@ api.post("/notifications/register", async (req, res, next) => {
       res.status(400).json({ message: "Token is required" });
       return;
     }
-    // req.user is populated by authGuard
+    // req.user 由 authGuard 中间件填充
     await registerDeviceToken((req as any).user!.id, token, platform || 'android');
     res.json({ success: true });
   } catch (err) {
@@ -170,14 +170,14 @@ api.post("/notifications/register", async (req, res, next) => {
   }
 });
 
-// Helper for role check
+// 角色检查辅助函数
 const requireAdmin = (req: any, res: any, next: any) => {
   const role = req.user?.role as UserRole;
   if (role === "超级管理员" || role === "管理员") return next();
   res.status(403).json({ message: "Forbidden: Admins only" });
 };
 
-// Role hierarchy definition (Lower value = Higher privilege)
+// 角色层级定义 (值越小 = 权限越高)
 const ROLE_RANK: Record<UserRole, number> = {
   "超级管理员": 0,
   "管理员": 1,
@@ -187,13 +187,13 @@ const ROLE_RANK: Record<UserRole, number> = {
 
 const getRoleRank = (role: UserRole): number => ROLE_RANK[role] ?? 999;
 
-// Helper to check strict hierarchy permission
-// Current user can only manage target users with STRICTLY LOWER rank (Higher rank value)
+// 严格层级权限检查辅助函数
+// 当前用户只能管理级别严格低于自己(rank值更大)的目标用户
 const canManageTargetRole = (currentRole: UserRole, targetRole: UserRole): boolean => {
   return getRoleRank(currentRole) < getRoleRank(targetRole);
 };
 
-// Helper for self or admin check
+// 仅限管理员或本人操作的检查辅助函数
 const requireAdminOrSelf = (req: any, res: any, next: any) => {
   const role = req.user?.role as UserRole;
   const currentUserId = req.user?.id;
@@ -205,14 +205,14 @@ const requireAdminOrSelf = (req: any, res: any, next: any) => {
   res.status(403).json({ message: "Forbidden: Admins or Self only" });
 };
 
-// Helper for item management check (Admins + Advanced Users)
+// 物资管理权限检查辅助函数 (管理员 + 高级用户)
 const requireItemManagePermission = (req: any, res: any, next: any) => {
   const role = req.user?.role as UserRole;
   if (role === "超级管理员" || role === "管理员" || role === "高级用户") return next();
   res.status(403).json({ message: "Forbidden: Insufficient permissions" });
 };
 
-// Departments (Protected actions)
+// 部门管理接口 (受保护)
 api.put("/departments/structure", requireAdmin, async (req, res, next) => {
   try {
     res.json(await updateDepartmentStructure(req.body));
@@ -245,7 +245,7 @@ api.delete("/departments/:id", requireAdmin, async (req, res, next) => {
   }
 });
 
-// Categories
+// 分类管理接口
 api.get("/categories", async (_req, res, next) => {
   try {
     res.json(await listCategories());
@@ -270,10 +270,10 @@ api.delete("/categories/:id", requireAdmin, async (req, res, next) => {
   }
 });
 
-// Items
+// 物资管理接口
 api.get("/items", async (req, res, next) => {
   try {
-    // listItems now handles pending quantity calculation and returns the view model
+    // listItems 现在会处理待审批数量计算并返回视图模型
     const items = await listItems();
     
     const ctx = (req as any).user as { role: UserRole; departmentId?: string };
@@ -345,7 +345,7 @@ api.delete("/items/:id", requireItemManagePermission, async (req, res, next) => 
 api.post("/items/:id/borrow", async (req, res, next) => {
   try {
     const user = (req as any).user;
-    // For ordinary users, force the borrower info to be themselves
+    // 对于普通用户，强制借用人信息为本人
     let borrower = req.body.borrower;
     if (user.role === "普通用户") {
        borrower = {
@@ -354,8 +354,8 @@ api.post("/items/:id/borrow", async (req, res, next) => {
          phone: user.contact
        };
     } else {
-       // For admins/advanced, ensure ID is present if possible, or trust payload
-       // Better to inject ID if names match? Let's just attach the ID if missing.
+       // 对于管理员/高级用户，如果可能则确保 ID 存在，或信任 payload
+       // 最好是在姓名匹配时注入 ID。这里简单处理：如果缺少 ID 则尝试附加。
        if (borrower && !borrower.id && borrower.name === user.name) {
           borrower.id = user.id;
        }
@@ -494,7 +494,7 @@ api.post("/items/:itemId/return/:historyEntryId", async (req, res, next) => {
   }
 });
 
-// Users
+// 用户管理接口
 api.get("/users", async (req, res, next) => {
   try {
     const users = await listUsers();
@@ -502,7 +502,7 @@ api.get("/users", async (req, res, next) => {
     const userRole = ctx?.role as UserRole;
 
     let departmentId = ctx?.departmentId;
-    // Super Admin can filter by department via query param
+    // 超级管理员可以通过查询参数过滤部门
     if (userRole === "超级管理员" && req.query.departmentId) {
       departmentId = req.query.departmentId as string;
     } else if (userRole === "超级管理员" && !req.query.departmentId) {
@@ -550,7 +550,7 @@ api.post("/users", requireAdmin, async (req, res, next) => {
     const currentUserRole = (req as any).user.role as UserRole;
     const newUserRole = req.body.role as UserRole;
 
-    // Security Check: Cannot create user with role >= current user
+    // 安全检查：无法创建角色等级 >= 当前用户的用户
     if (!canManageTargetRole(currentUserRole, newUserRole)) {
        res.status(403).json({ message: "权限不足：无法创建同级或更高级别的用户角色" });
        return;
@@ -573,28 +573,28 @@ api.put("/users/:id", requireAdminOrSelf, async (req, res, next) => {
 
     const targetUser = await getUser(req.params.id);
     
-    // Security Check 1: Hierarchy enforcement (for managing others)
+    // 安全检查 1: 层级强制 (针对管理他人)
     if (!isSelf) {
-        // Cannot edit user with role >= current user
+        // 无法编辑角色等级 >= 当前用户的用户
         if (!canManageTargetRole(currentUserRole, targetUser.role)) {
             res.status(403).json({ message: "权限不足：无法编辑同级或更高级别的用户" });
             return;
         }
 
-        // If changing role, cannot promote to role >= current user
+        // 如果修改角色，无法提升至 >= 当前用户的等级
         if (req.body.role && !canManageTargetRole(currentUserRole, req.body.role as UserRole)) {
             res.status(403).json({ message: "权限不足：无法将用户提升至同级或更高级别" });
             return;
         }
     } else {
-        // Security Check 2: Self-management restrictions (for non-Super Admins)
+        // 安全检查 2: 自我管理限制 (针对非超级管理员)
         if (currentUserRole !== "超级管理员") {
-             // Cannot change own role
+             // 无法修改自己的角色
              if (req.body.role && req.body.role !== targetUser.role) {
                  res.status(403).json({ message: "权限不足：无法修改自己的角色" });
                  return;
              }
-             // Cannot change own status
+             // 无法修改自己的状态
              if (req.body.status && req.body.status !== targetUser.status) {
                  res.status(403).json({ message: "权限不足：无法修改自己的状态" });
                  return;
@@ -602,7 +602,7 @@ api.put("/users/:id", requireAdminOrSelf, async (req, res, next) => {
         }
     }
 
-    // Security Check 3: Invitation Code (Global rule: Only Super Admin can change)
+    // 安全检查 3: 邀请码 (全局规则：仅超级管理员可修改)
     if (currentUserRole !== "超级管理员") {
         if (req.body.invitationCode !== undefined && req.body.invitationCode !== targetUser.invitationCode) {
              res.status(403).json({ message: "权限不足：仅超级管理员可修改邀请码" });
@@ -622,7 +622,7 @@ api.delete("/users/:id", requireAdmin, async (req, res, next) => {
     const currentUserRole = (req as any).user.role as UserRole;
     const targetUser = await getUser(req.params.id);
 
-    // Security Check: Cannot delete user with role >= current user
+    // 安全检查：无法删除角色等级 >= 当前用户的用户
     if (!canManageTargetRole(currentUserRole, targetUser.role)) {
         res.status(403).json({ message: "权限不足：无法删除同级或更高级别的用户" });
         return;
@@ -634,7 +634,7 @@ api.delete("/users/:id", requireAdmin, async (req, res, next) => {
   }
 });
 
-// Approvals
+// 注册审批接口
 api.get("/approvals", async (req, res, next) => {
   try {
     const ctx = (req as any).user as { id: string; role: UserRole; departmentId?: string };
@@ -663,7 +663,7 @@ api.delete("/approvals/:id", async (req, res, next) => {
   }
 });
 
-// History
+// 借还历史记录接口
 api.get("/history", async (req, res, next) => {
   try {
     const ctx = (req as any).user as { id: string; role: UserRole; departmentId?: string; contact?: string };
