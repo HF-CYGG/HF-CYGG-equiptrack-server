@@ -4,6 +4,7 @@ import { Department } from "../entities/Department";
 import { generateId } from "../utils/store";
 import type { UserRole } from "../models/types";
 import { Like } from "typeorm";
+import { hashPasswordIfNeeded } from "./authService";
 
 export async function listUsers(query?: string): Promise<User[]> {
   const userRepo = AppDataSource.getRepository(User);
@@ -33,6 +34,7 @@ export async function addUser(input: Omit<User, "id">): Promise<User> {
 
   const user = userRepo.create({
       ...input,
+      password: hashPasswordIfNeeded(input.password),
       id: generateId("user")
   });
   await userRepo.save(user);
@@ -44,6 +46,10 @@ export async function updateUser(id: string, input: Partial<User>): Promise<User
   const user = await userRepo.findOneBy({ id });
   if (!user) throw Object.assign(new Error("User not found"), { status: 404 });
   
+  if (input.password !== undefined) {
+    input.password = hashPasswordIfNeeded(input.password);
+  }
+
   userRepo.merge(user, input);
   await userRepo.save(user);
   return user;

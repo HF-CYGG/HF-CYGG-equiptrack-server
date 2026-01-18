@@ -19,7 +19,17 @@ app.use(helmet({
 // GZIP 压缩
 app.use(compression());
 // CORS 跨域设置
-app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
+const corsOriginOption =
+  env.CORS_ORIGIN.trim() === "*"
+    ? "*"
+    : env.CORS_ORIGIN.split(",").map(s => s.trim()).filter(Boolean);
+
+app.use(cors({
+  origin: corsOriginOption,
+  credentials: false,
+  allowedHeaders: ["Content-Type", "Authorization"],
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+}));
 // 全局速率限制
 app.use(
   rateLimit({
@@ -34,8 +44,13 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // 静态文件服务
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-app.use("/avatars", express.static(path.join(process.cwd(), "data", "avatars")));
+const staticHeaders = (res: any) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+};
+
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), { setHeaders: staticHeaders }));
+app.use("/avatars", express.static(path.join(process.cwd(), "data", "avatars"), { setHeaders: staticHeaders }));
 
 // 根路由 (健康检查/欢迎页)
 app.get("/", (_req, res) => {

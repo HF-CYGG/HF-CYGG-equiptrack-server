@@ -28,7 +28,7 @@ const storage = multer.diskStorage({
     // or better: let the route handle specific upload types or use a query param.
     
     let subfolder = othersDir;
-    const type = req.query.type || req.body.type;
+    const type = (req.query.type || req.body.type) as string | undefined;
 
     if (type === "item_thumb") {
       subfolder = itemsThumbsDir;
@@ -52,7 +52,39 @@ const storage = multer.diskStorage({
   },
 });
 
-export const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+const allowedUploadTypes = new Set([
+  "item_thumb",
+  "item_full",
+  "item",
+  "return",
+  "borrow",
+  "avatar",
+]);
+
+const allowedImageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+
+export const upload = multer({
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const type = (req.query.type || (req.body as any)?.type) as string | undefined;
+    if (!type || !allowedUploadTypes.has(type)) {
+      cb(Object.assign(new Error("Invalid upload type"), { status: 400 }));
+      return;
+    }
+
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!allowedImageExtensions.has(ext)) {
+      cb(Object.assign(new Error("Unsupported file type"), { status: 400 }));
+      return;
+    }
+
+    const mime = (file.mimetype || "").toLowerCase();
+    if (!mime.startsWith("image/")) {
+      cb(Object.assign(new Error("Unsupported file type"), { status: 400 }));
+      return;
+    }
+
+    cb(null, true);
+  },
 });

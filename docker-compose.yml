@@ -11,5 +11,18 @@ services:
       - "/opt/equiptrack/data:/app/data"
       - "/opt/equiptrack/uploads:/app/uploads"
     environment:
-      - NODE_ENV=production
-
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3000}
+      JWT_SECRET: ${JWT_SECRET:-equiptrack-dev-secret}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-200}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql-server}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_USER: ${MYSQL_USER:-equiptrack_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-strong_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-EquipTrack}
+      TYPEORM_SYNCHRONIZE: ${TYPEORM_SYNCHRONIZE:-true}
+      DB_SYNCHRONIZE: ${DB_SYNCHRONIZE:-true}
+      FIREBASE_CREDENTIALS: ${FIREBASE_CREDENTIALS:-}
+      ALLOW_PLAINTEXT_PASSWORDS: ${ALLOW_PLAINTEXT_PASSWORDS:-false}

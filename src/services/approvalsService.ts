@@ -5,8 +5,14 @@ import { generateId } from "../utils/store";
 import type { UserRole } from "../models/types";
 import { notifyAdmins } from "./notificationService";
 import { Department } from "../entities/Department";
+import { hashPasswordIfNeeded } from "./authService";
 
-export async function listApprovals(ctx: { userRole: UserRole; departmentId?: string; status?: "pending" | "approved" | "rejected" }): Promise<RegistrationRequest[]> {
+export async function listApprovals(ctx: {
+  userId: string;
+  userRole: UserRole;
+  departmentId?: string;
+  status?: "pending" | "approved" | "rejected";
+}): Promise<RegistrationRequest[]> {
   const repo = AppDataSource.getRepository(RegistrationRequest);
   const status = ctx.status || "pending";
 
@@ -14,6 +20,11 @@ export async function listApprovals(ctx: { userRole: UserRole; departmentId?: st
     return repo.find({ where: { status } });
   }
 
+  if (ctx.userRole === "高级用户") {
+    return repo.find({ where: { status, invitedByUserId: ctx.userId } });
+  }
+
+  if (ctx.userRole !== "管理员") return [];
   if (!ctx.departmentId) return [];
 
   const deptRepo = AppDataSource.getRepository(Department);
@@ -29,7 +40,10 @@ export async function listApprovals(ctx: { userRole: UserRole; departmentId?: st
   });
 }
 
-export async function approveRequest(id: string): Promise<RegistrationRequest> {
+export async function approveRequest(
+  id: string,
+  actor: { userId: string; userRole: UserRole; departmentId?: string }
+): Promise<RegistrationRequest> {
   const regRepo = AppDataSource.getRepository(RegistrationRequest);
   const userRepo = AppDataSource.getRepository(User);
   const deptRepo = AppDataSource.getRepository(Department);
@@ -39,6 +53,22 @@ export async function approveRequest(id: string): Promise<RegistrationRequest> {
       if (!req) throw Object.assign(new Error("Request not found"), { status: 404 });
       
       if (req.status !== "pending") throw Object.assign(new Error("Request already processed"), { status: 400 });
+
+      if (actor.userRole !== "超级管理员") {
+          if (actor.userRole === "高级用户") {
+              if (!req.invitedByUserId || req.invitedByUserId !== actor.userId) {
+                  throw Object.assign(new Error("Forbidden"), { status: 403 });
+              }
+          } else if (actor.userRole === "管理员") {
+              if (!actor.departmentId) throw Object.assign(new Error("Forbidden"), { status: 403 });
+              const actorDept = await manager.findOne(Department, { where: { id: actor.departmentId } });
+              if (!actorDept || actorDept.name !== req.departmentName) {
+                  throw Object.assign(new Error("Forbidden"), { status: 403 });
+              }
+          } else {
+              throw Object.assign(new Error("Forbidden"), { status: 403 });
+          }
+      }
 
       const dept = await manager.findOne(Department, { where: { name: req.departmentName } });
       if (!dept) throw Object.assign(new Error(`Department "${req.departmentName}" not found`), { status: 400 });
@@ -51,7 +81,7 @@ export async function approveRequest(id: string): Promise<RegistrationRequest> {
           departmentName: dept.name,
           role: "普通用户",
           status: "active",
-          password: req.passwordHash || "123456",
+          password: hashPasswordIfNeeded(req.passwordHash || "123456"),
           invitationCode: req.invitationCode
       });
       await manager.save(newUser);
@@ -63,11 +93,31 @@ export async function approveRequest(id: string): Promise<RegistrationRequest> {
   });
 }
 
-export async function rejectRequest(id: string): Promise<RegistrationRequest> {
+export async function rejectRequest(
+  id: string,
+  actor: { userId: string; userRole: UserRole; departmentId?: string }
+): Promise<RegistrationRequest> {
   const regRepo = AppDataSource.getRepository(RegistrationRequest);
   const req = await regRepo.findOneBy({ id });
   if (!req) throw Object.assign(new Error("Request not found"), { status: 404 });
   if (req.status !== "pending") throw Object.assign(new Error("Request already processed"), { status: 400 });
+
+  if (actor.userRole !== "超级管理员") {
+      if (actor.userRole === "高级用户") {
+          if (!req.invitedByUserId || req.invitedByUserId !== actor.userId) {
+              throw Object.assign(new Error("Forbidden"), { status: 403 });
+          }
+      } else if (actor.userRole === "管理员") {
+          if (!actor.departmentId) throw Object.assign(new Error("Forbidden"), { status: 403 });
+          const deptRepo = AppDataSource.getRepository(Department);
+          const actorDept = await deptRepo.findOneBy({ id: actor.departmentId });
+          if (!actorDept || actorDept.name !== req.departmentName) {
+              throw Object.assign(new Error("Forbidden"), { status: 403 });
+          }
+      } else {
+          throw Object.assign(new Error("Forbidden"), { status: 403 });
+      }
+  }
 
   req.status = "rejected";
   await regRepo.save(req);

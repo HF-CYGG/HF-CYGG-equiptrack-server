@@ -20,6 +20,34 @@ import rateLimit from "express-rate-limit";
 
 export const api = Router();
 
+const badRequest = (message: string) => Object.assign(new Error(message), { status: 400 });
+
+const requireString = (value: any, field: string, opts?: { min?: number; max?: number }) => {
+  const min = opts?.min ?? 1;
+  const max = opts?.max ?? 256;
+  if (typeof value !== "string") throw badRequest(`${field} must be a string`);
+  const v = value.trim();
+  if (v.length < min) throw badRequest(`${field} is required`);
+  if (v.length > max) throw badRequest(`${field} is too long`);
+  return v;
+};
+
+const optionalString = (value: any, field: string, opts?: { max?: number }) => {
+  if (value === undefined || value === null) return undefined;
+  const max = opts?.max ?? 256;
+  if (typeof value !== "string") throw badRequest(`${field} must be a string`);
+  const v = value.trim();
+  if (!v) return undefined;
+  if (v.length > max) throw badRequest(`${field} is too long`);
+  return v;
+};
+
+const requireEnum = <T extends readonly string[]>(value: any, field: string, allowed: T): T[number] => {
+  if (typeof value !== "string") throw badRequest(`${field} must be a string`);
+  if (!allowed.includes(value as any)) throw badRequest(`${field} is invalid`);
+  return value as any;
+};
+
 // 登录频率限制：防止暴力破解
 const loginLimiter = rateLimit({
 	windowMs: 15 * 60 * 1000, // 15分钟时间窗口
@@ -27,6 +55,15 @@ const loginLimiter = rateLimit({
 	message: { message: "尝试登录次数过多，请15分钟后再试" },
 	standardHeaders: true,
 	legacyHeaders: false,
+});
+
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { message: "注册申请过于频繁，请稍后再试" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => `${req.ip}:${(req.body?.contact ?? "").toString().trim()}`,
 });
 
 // 系统/应用版本信息接口
@@ -74,7 +111,9 @@ api.get("/system/android-version", async (_req, res, next) => {
 // 认证相关接口
 api.post("/login", loginLimiter, async (req, res, next) => {
   try {
-    const { contact, password } = req.body || {};
+    const body = req.body || {};
+    const contact = requireString(body.contact, "contact", { max: 64 });
+    const password = requireString(body.password, "password", { min: 1, max: 128 });
     const { user, token } = await login(contact, password);
     res.json({ user, token });
   } catch (err) {
@@ -82,9 +121,18 @@ api.post("/login", loginLimiter, async (req, res, next) => {
   }
 });
 
-api.post("/signup", async (req, res, next) => {
+api.post("/signup", signupLimiter, async (req, res, next) => {
   try {
-    const result = await signup(req.body);
+    const body = req.body || {};
+    const payload = {
+      name: requireString(body.name, "name", { max: 64 }),
+      contact: requireString(body.contact, "contact", { max: 64 }),
+      departmentName: requireString(body.departmentName, "departmentName", { max: 64 }),
+      invitationCode: requireString(body.invitationCode, "invitationCode", { max: 64 }),
+      invitedByUserId: optionalString(body.invitedByUserId, "invitedByUserId", { max: 64 }),
+      password: optionalString(body.password, "password", { max: 128 }),
+    };
+    const result = await signup(payload);
     res.json(result);
   } catch (err) {
     next(err);
@@ -117,18 +165,53 @@ api.get("/departments", async (_req, res, next) => {
   }
 });
 
-// 文件上传接口
-api.post("/upload", upload.single("file"), (req, res, next) => {
+// 以下所有路由均受 JWT 认证保护
+api.use(authGuard);
+
+const tokenRegisterLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  message: { message: "操作过于频繁，请稍后再试" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => `${req.ip}:${req.user?.id ?? ""}`,
+});
+
+// 通知注册接口
+api.post("/notifications/register", tokenRegisterLimiter, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const token = requireString(body.token, "token", { max: 4096 });
+    const platform = body.platform
+      ? requireEnum(body.platform, "platform", ["android", "ios"] as const)
+      : "android";
+    // req.user 由 authGuard 中间件填充
+    await registerDeviceToken((req as any).user!.id, token, platform);
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  message: { message: "上传过于频繁，请稍后再试" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => `${req.ip}:${req.user?.id ?? ""}`,
+});
+
+// 文件上传接口（必须登录）
+api.post("/upload", uploadLimiter, upload.single("file"), (req, res, next) => {
   try {
     if (!req.file) {
-       res.status(400).json({ message: "No file uploaded" });
-       return;
+      res.status(400).json({ message: "No file uploaded" });
+      return;
     }
-    
-    // 根据实际存储位置确定相对路径
-    // 此处处理 upload 中间件的动态子文件夹逻辑
-    const type = req.query.type || req.body.type;
-    let subfolder = "others";
+
+    const type = (req.query.type || (req.body as any)?.type) as string;
+    let subfolder = "items";
     let urlPrefix = "/uploads";
 
     if (type === "item_thumb") subfolder = "items/thumbs";
@@ -138,33 +221,14 @@ api.post("/upload", upload.single("file"), (req, res, next) => {
     else if (type === "borrow") subfolder = "borrows";
     else if (type === "avatar") {
       urlPrefix = "/avatars";
-      subfolder = ""; // 头像直接从 /avatars/filename 提供服务
+      subfolder = "";
     }
-    
-    const fileUrl = subfolder 
-      ? `${urlPrefix}/${subfolder}/${req.file.filename}` 
+
+    const fileUrl = subfolder
+      ? `${urlPrefix}/${subfolder}/${req.file.filename}`
       : `${urlPrefix}/${req.file.filename}`;
-      
+
     res.json({ url: fileUrl });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// 以下所有路由均受 JWT 认证保护
-api.use(authGuard);
-
-// 通知注册接口
-api.post("/notifications/register", async (req, res, next) => {
-  try {
-    const { token, platform } = req.body;
-    if (!token) {
-      res.status(400).json({ message: "Token is required" });
-      return;
-    }
-    // req.user 由 authGuard 中间件填充
-    await registerDeviceToken((req as any).user!.id, token, platform || 'android');
-    res.json({ success: true });
   } catch (err) {
     next(err);
   }
@@ -548,7 +612,8 @@ api.get("/users/:id", async (req, res, next) => {
 api.post("/users", requireAdmin, async (req, res, next) => {
   try {
     const currentUserRole = (req as any).user.role as UserRole;
-    const newUserRole = req.body.role as UserRole;
+    const body = req.body || {};
+    const newUserRole = requireEnum(body.role, "role", ["超级管理员", "管理员", "高级用户", "普通用户"] as const) as UserRole;
 
     // 安全检查：无法创建角色等级 >= 当前用户的用户
     if (!canManageTargetRole(currentUserRole, newUserRole)) {
@@ -556,7 +621,20 @@ api.post("/users", requireAdmin, async (req, res, next) => {
        return;
     }
 
-    const { password, ...u } = await addUser(req.body);
+    const payload = {
+      name: requireString(body.name, "name", { max: 64 }),
+      contact: requireString(body.contact, "contact", { max: 64 }),
+      departmentId: requireString(body.departmentId, "departmentId", { max: 64 }),
+      departmentName: requireString(body.departmentName, "departmentName", { max: 64 }),
+      role: newUserRole,
+      status: optionalString(body.status, "status", { max: 32 }),
+      password: requireString(body.password, "password", { min: 1, max: 128 }),
+      invitationCode: optionalString(body.invitationCode, "invitationCode", { max: 64 }),
+      avatarUrl: optionalString(body.avatarUrl, "avatarUrl", { max: 512 }),
+      banReason: optionalString(body.banReason, "banReason", { max: 256 }),
+    };
+
+    const { password, ...u } = await addUser(payload as any);
     res.json(u);
   } catch (err) {
     next(err);
@@ -571,6 +649,19 @@ api.put("/users/:id", requireAdminOrSelf, async (req, res, next) => {
     const targetUserId = req.params.id;
     const isSelf = currentUserId === targetUserId;
 
+    const body = req.body || {};
+    const updates: any = {};
+    if (body.name !== undefined) updates.name = requireString(body.name, "name", { max: 64 });
+    if (body.contact !== undefined) updates.contact = requireString(body.contact, "contact", { max: 64 });
+    if (body.departmentId !== undefined) updates.departmentId = requireString(body.departmentId, "departmentId", { max: 64 });
+    if (body.departmentName !== undefined) updates.departmentName = requireString(body.departmentName, "departmentName", { max: 64 });
+    if (body.role !== undefined) updates.role = requireEnum(body.role, "role", ["超级管理员", "管理员", "高级用户", "普通用户"] as const);
+    if (body.status !== undefined) updates.status = requireString(body.status, "status", { max: 32 });
+    if (body.password !== undefined) updates.password = requireString(body.password, "password", { min: 1, max: 128 });
+    if (body.invitationCode !== undefined) updates.invitationCode = requireString(body.invitationCode, "invitationCode", { max: 64 });
+    if (body.avatarUrl !== undefined) updates.avatarUrl = requireString(body.avatarUrl, "avatarUrl", { max: 512 });
+    if (body.banReason !== undefined) updates.banReason = requireString(body.banReason, "banReason", { max: 256 });
+
     const targetUser = await getUser(req.params.id);
     
     // 安全检查 1: 层级强制 (针对管理他人)
@@ -582,7 +673,7 @@ api.put("/users/:id", requireAdminOrSelf, async (req, res, next) => {
         }
 
         // 如果修改角色，无法提升至 >= 当前用户的等级
-        if (req.body.role && !canManageTargetRole(currentUserRole, req.body.role as UserRole)) {
+        if (updates.role && !canManageTargetRole(currentUserRole, updates.role as UserRole)) {
             res.status(403).json({ message: "权限不足：无法将用户提升至同级或更高级别" });
             return;
         }
@@ -590,12 +681,12 @@ api.put("/users/:id", requireAdminOrSelf, async (req, res, next) => {
         // 安全检查 2: 自我管理限制 (针对非超级管理员)
         if (currentUserRole !== "超级管理员") {
              // 无法修改自己的角色
-             if (req.body.role && req.body.role !== targetUser.role) {
+             if (updates.role && updates.role !== targetUser.role) {
                  res.status(403).json({ message: "权限不足：无法修改自己的角色" });
                  return;
              }
              // 无法修改自己的状态
-             if (req.body.status && req.body.status !== targetUser.status) {
+             if (updates.status && updates.status !== targetUser.status) {
                  res.status(403).json({ message: "权限不足：无法修改自己的状态" });
                  return;
              }
@@ -604,13 +695,13 @@ api.put("/users/:id", requireAdminOrSelf, async (req, res, next) => {
 
     // 安全检查 3: 邀请码 (全局规则：仅超级管理员可修改)
     if (currentUserRole !== "超级管理员") {
-        if (req.body.invitationCode !== undefined && req.body.invitationCode !== targetUser.invitationCode) {
+        if (updates.invitationCode !== undefined && updates.invitationCode !== targetUser.invitationCode) {
              res.status(403).json({ message: "权限不足：仅超级管理员可修改邀请码" });
              return;
         }
     }
 
-    const { password, ...u } = await updateUser(req.params.id, req.body);
+    const { password, ...u } = await updateUser(req.params.id, updates);
     res.json(u);
   } catch (err) {
     next(err);
@@ -634,29 +725,42 @@ api.delete("/users/:id", requireAdmin, async (req, res, next) => {
   }
 });
 
+const approvalsLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 60,
+  message: { message: "操作过于频繁，请稍后再试" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => `${req.ip}:${req.user?.id ?? ""}`,
+});
+
 // 注册审批接口
 api.get("/approvals", async (req, res, next) => {
   try {
     const ctx = (req as any).user as { id: string; role: UserRole; departmentId?: string };
-    const list = await listApprovals({ userRole: ctx.role, departmentId: ctx.departmentId });
+    const list = await listApprovals({ userId: ctx.id, userRole: ctx.role, departmentId: ctx.departmentId });
     res.json(list);
   } catch (err) {
     next(err);
   }
 });
 
-api.post("/approvals/:id", async (req, res, next) => {
+api.post("/approvals/:id", approvalsLimiter, async (req, res, next) => {
   try {
-    await approveRequest(req.params.id);
+    const ctx = (req as any).user as { id: string; role: UserRole; departmentId?: string };
+    const id = requireString(req.params.id, "id", { max: 64 });
+    await approveRequest(id, { userId: ctx.id, userRole: ctx.role, departmentId: ctx.departmentId });
     res.json({ message: "Approved" });
   } catch (err) {
     next(err);
   }
 });
 
-api.delete("/approvals/:id", async (req, res, next) => {
+api.delete("/approvals/:id", approvalsLimiter, async (req, res, next) => {
   try {
-    await rejectRequest(req.params.id);
+    const ctx = (req as any).user as { id: string; role: UserRole; departmentId?: string };
+    const id = requireString(req.params.id, "id", { max: 64 });
+    await rejectRequest(id, { userId: ctx.id, userRole: ctx.role, departmentId: ctx.departmentId });
     res.json({ message: "Rejected" });
   } catch (err) {
     next(err);
