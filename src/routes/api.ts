@@ -11,6 +11,15 @@ import { createBorrowRequest, listMyBorrowRequests, listReviewBorrowRequests, ap
 import type { UserRole, BorrowRequestEntry } from "../models/types";
 import { readAll } from "../utils/store";
 import { authGuard } from "../middlewares/auth";
+import {
+  requireItemScope,
+  requireItemCreateScope,
+  requireUserScope,
+  requireUserCreateScope,
+  requireReturnScope,
+  canOperateDepartment,
+  isSuperAdmin,
+} from "../middlewares/scope";
 import { upload } from "../middlewares/upload";
 import { registerDeviceToken } from "../services/notificationService";
 import type { AppVersion } from "../models/types";
@@ -368,7 +377,7 @@ api.get("/items/:id", async (req, res, next) => {
   }
 });
 
-api.post("/items", requireItemManagePermission, async (req, res, next) => {
+api.post("/items", requireItemManagePermission, requireItemCreateScope, async (req, res, next) => {
   try {
     const { name, categoryId, quantity, departmentId } = req.body;
     if (!name || !categoryId || quantity === undefined || !departmentId) {
@@ -385,20 +394,26 @@ api.post("/items", requireItemManagePermission, async (req, res, next) => {
   }
 });
 
-api.put("/items/:id", requireItemManagePermission, async (req, res, next) => {
+api.put("/items/:id", requireItemManagePermission, requireItemScope, async (req, res, next) => {
   try {
     const { quantity } = req.body;
     if (quantity !== undefined && (typeof quantity !== 'number' || quantity < 0)) {
        res.status(400).json({ message: "quantity 必须为非负数字" });
        return;
     }
-    res.json(await updateItem(req.params.id, req.body));
+    const user = (req as any).user;
+    res.json(
+      await updateItem(req.params.id, req.body, {
+        // 只有超级管理员可以把物资调拨到别的部门
+        allowDepartmentChange: isSuperAdmin(user.role),
+      })
+    );
   } catch (err) {
     next(err);
   }
 });
 
-api.delete("/items/:id", requireItemManagePermission, async (req, res, next) => {
+api.delete("/items/:id", requireItemManagePermission, requireItemScope, async (req, res, next) => {
   try {
     res.json(await deleteItem(req.params.id));
   } catch (err) {
@@ -409,20 +424,22 @@ api.delete("/items/:id", requireItemManagePermission, async (req, res, next) => 
 api.post("/items/:id/borrow", async (req, res, next) => {
   try {
     const user = (req as any).user;
-    // 对于普通用户，强制借用人信息为本人
-    let borrower = req.body.borrower;
-    if (user.role === "普通用户") {
-       borrower = {
-         id: user.id,
-         name: user.name,
-         phone: user.contact
-       };
-    } else {
-       // 对于管理员/高级用户，如果可能则确保 ID 存在，或信任 payload
-       // 最好是在姓名匹配时注入 ID。这里简单处理：如果缺少 ID 则尝试附加。
-       if (borrower && !borrower.id && borrower.name === user.name) {
-          borrower.id = user.id;
-       }
+    const item = await getItem(req.params.id);
+
+    const isManager =
+      isSuperAdmin(user.role) || user.role === "管理员" || user.role === "高级用户";
+    // 只有本部门的管理者才能直接出借，以及代他人登记借用
+    const canLendForOthers = isManager && canOperateDepartment(user, item.departmentId);
+
+    // 需要审批的物资必须走借用申请，不能通过本接口直接扣减库存绕过审批
+    if (item.requiresApproval && !canLendForOthers) {
+      throw Object.assign(new Error("该物资需要审批，请通过借用申请提交"), { status: 403 });
+    }
+
+    // 借用人默认且强制为本人，避免把借用记录挂到他人名下
+    let borrower = { id: user.id, name: user.name, phone: user.contact };
+    if (canLendForOthers && req.body.borrower) {
+      borrower = req.body.borrower;
     }
     
     res.json(
@@ -544,13 +561,15 @@ api.post("/borrow-requests/:id/reject", async (req, res, next) => {
   }
 });
 
-api.post("/items/:itemId/return/:historyEntryId", async (req, res, next) => {
+api.post("/items/:itemId/return/:historyEntryId", requireReturnScope, async (req, res, next) => {
   try {
+    const user = (req as any).user;
     res.json(
       await returnItem(req.params.itemId, req.params.historyEntryId, {
         photo: req.body.photo,
         isForced: req.body.isForced,
-        adminName: req.body.adminName,
+        // 强制归还的操作人取自登录身份，不接受请求体伪造
+        adminName: req.body.isForced ? user.name : undefined,
       })
     );
   } catch (err) {
@@ -609,7 +628,7 @@ api.get("/users/:id", async (req, res, next) => {
   }
 });
 
-api.post("/users", requireAdmin, async (req, res, next) => {
+api.post("/users", requireAdmin, requireUserCreateScope, async (req, res, next) => {
   try {
     const currentUserRole = (req as any).user.role as UserRole;
     const body = req.body || {};
@@ -641,7 +660,7 @@ api.post("/users", requireAdmin, async (req, res, next) => {
   }
 });
 
-api.put("/users/:id", requireAdminOrSelf, async (req, res, next) => {
+api.put("/users/:id", requireAdminOrSelf, requireUserScope, async (req, res, next) => {
   try {
     const currentUser = (req as any).user;
     const currentUserRole = currentUser.role as UserRole;
@@ -680,14 +699,20 @@ api.put("/users/:id", requireAdminOrSelf, async (req, res, next) => {
     } else {
         // 安全检查 2: 自我管理限制 (针对非超级管理员)
         if (currentUserRole !== "超级管理员") {
-             // 无法修改自己的角色
-             if (updates.role && updates.role !== targetUser.role) {
-                 res.status(403).json({ message: "权限不足：无法修改自己的角色" });
-                 return;
-             }
-             // 无法修改自己的状态
-             if (updates.status && updates.status !== targetUser.status) {
-                 res.status(403).json({ message: "权限不足：无法修改自己的状态" });
+             // 本人只允许改这几项。此前只拦了 role 和 status，
+             // 于是用户可以自行把 departmentId 改到别的部门，
+             // 重新登录后就获得了该部门的审批与查看权限。
+             const selfEditableFields = new Set(["name", "avatarUrl", "password"]);
+             const changedForbidden = Object.keys(updates).filter((field) => {
+                 if (selfEditableFields.has(field)) return false;
+                 // 提交完整用户对象但未改动该字段时不算越权
+                 return (updates as any)[field] !== (targetUser as any)[field];
+             });
+
+             if (changedForbidden.length > 0) {
+                 res.status(403).json({
+                     message: `权限不足：不能修改自己的 ${changedForbidden.join("、")}`,
+                 });
                  return;
              }
         }
@@ -708,7 +733,7 @@ api.put("/users/:id", requireAdminOrSelf, async (req, res, next) => {
   }
 });
 
-api.delete("/users/:id", requireAdmin, async (req, res, next) => {
+api.delete("/users/:id", requireAdmin, requireUserScope, async (req, res, next) => {
   try {
     const currentUserRole = (req as any).user.role as UserRole;
     const targetUser = await getUser(req.params.id);
