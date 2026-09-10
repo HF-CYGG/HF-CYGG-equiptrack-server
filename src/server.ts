@@ -2,6 +2,7 @@ import { app } from "./app";
 import { env } from "./config/env";
 import { AppDataSource } from "./data-source";
 import { createSchemaIfEmpty } from "./init_schema";
+import { createInitialAdminIfMissing } from "./init_admin";
 import { migrateJsonToSqlIfNeeded } from "./sync_json_to_sql";
 import { ensureDatabaseSchema } from "./utils/schema_fix";
 import { startDatabaseWatchdog } from "./database-watchdog";
@@ -81,6 +82,17 @@ async function bootstrap() {
   } catch (err) {
     console.error("JSON-to-SQL migration error:", err);
     await logBoot("json_to_sql_migration_failed");
+  }
+
+  // 放在 JSON 迁移之后：迁移可能已经带入了历史账号，那就不该再造一个初始管理员。
+  // 只有在一个用户都没有、且配了 INITIAL_ADMIN_* 时才会创建。
+  try {
+    const adminCreated = await createInitialAdminIfMissing();
+    if (adminCreated) {
+      await logBoot("initial admin created");
+    }
+  } catch (err) {
+    console.error("初始管理员创建失败：", err);
   }
 
   server = app.listen(env.PORT, () => {

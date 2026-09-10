@@ -1,24 +1,17 @@
 import "reflect-metadata";
-import crypto from "crypto";
 import { AppDataSource } from "./data-source";
-import { User } from "./entities/User";
-import { Department } from "./entities/Department";
-import { hashPassword } from "./services/authService";
-import { generateId } from "./utils/store";
+import { createAdmin } from "./init_admin";
 
 /**
- * 创建初始超级管理员。
+ * 手工创建超级管理员。
  *
- * 全新部署的库里一个用户都没有，而注册接口要求邀请码必须属于某位在职管理者，
- * 于是「第一个账号」无法通过接口自助创建。这个脚本就是那个入口，只在初始化时用一次。
+ * 自动化部署更推荐用环境变量（INITIAL_ADMIN_CONTACT / INITIAL_ADMIN_PASSWORD），
+ * 服务启动时会在用户表为空的情况下自动创建。这个脚本用于事后补建，
+ * 或者不想把密码写进 .env 的场景。
  *
- * 用法（在 server 目录或容器内）：
- *   npm run create-admin -- --contact 13800000000 --password 'YourStrongPass'
- *
- * 可选参数：
- *   --name        显示名称，默认「超级管理员」
- *   --department  所属部门名，不存在则自动创建，默认「总部」
- *   --code        邀请码，留空则随机生成并在结束时打印
+ * 用法：
+ *   docker compose exec equiptrack-server npm run create-admin -- \
+ *     --contact 13800000000 --password 'YourStrongPass'
  */
 
 function readArg(name: string): string | undefined {
@@ -48,64 +41,35 @@ function usage(): never {
 async function main() {
   const contact = readArg("contact");
   const password = readArg("password");
-  const name = readArg("name") || "超级管理员";
-  const departmentName = readArg("department") || "总部";
-  const invitationCode = readArg("code") || crypto.randomBytes(4).toString("hex").toUpperCase();
 
   if (!contact || !password) usage();
 
-  if (password.length < 8) {
-    console.error("密码至少 8 位。");
-    process.exit(1);
-  }
-
   await AppDataSource.initialize();
 
-  const userRepo = AppDataSource.getRepository(User);
-  const deptRepo = AppDataSource.getRepository(Department);
-
-  const existing = await userRepo.findOneBy({ contact });
-  if (existing) {
-    console.error(`联系方式 ${contact} 已被占用（当前角色：${existing.role}），未做任何修改。`);
-    await AppDataSource.destroy();
-    process.exit(1);
-  }
-
-  let department = await deptRepo.findOneBy({ name: departmentName });
-  if (!department) {
-    department = deptRepo.create({
-      id: generateId("dept"),
-      name: departmentName,
-      requiresApproval: true,
-      order: 0,
+  try {
+    const created = await createAdmin({
+      contact,
+      password,
+      name: readArg("name"),
+      departmentName: readArg("department"),
+      invitationCode: readArg("code"),
     });
-    await deptRepo.save(department);
-    console.log(`已创建部门「${departmentName}」`);
-  }
 
-  const admin = userRepo.create({
-    id: generateId("user"),
-    name,
-    contact,
-    departmentId: department.id,
-    departmentName: department.name,
-    role: "超级管理员",
-    status: "active",
-    password: hashPassword(password),
-    invitationCode,
-  });
-  await userRepo.save(admin);
-
-  console.log(`
+    console.log(`
 已创建超级管理员：
-  登录名  ${contact}
-  姓名    ${name}
-  部门    ${department.name}
-  邀请码  ${invitationCode}
+  登录名  ${created.contact}
+  姓名    ${created.name}
+  部门    ${created.departmentName}
+  邀请码  ${created.invitationCode}
 
 其他人注册时需要填这个邀请码，注册申请由你审批。
 邀请码可在 App 的用户管理里修改。
 `);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    await AppDataSource.destroy();
+    process.exit(1);
+  }
 
   await AppDataSource.destroy();
 }
