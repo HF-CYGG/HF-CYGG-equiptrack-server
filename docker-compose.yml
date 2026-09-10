@@ -51,6 +51,21 @@ services:
       retries: 3
       start_period: 60s
 
+networks:
+  default:
+    ipam:
+      config:
+        # 显式给默认网络配一个子网。
+        #
+        # 不配的话，1Panel 在「容器 → 编辑」里保存时会连同表单里的 IPv4 字段一起提交，
+        # 而 Docker 对没有用户配置子网的网络不接受指定 IP，于是报：
+        #   invalid endpoint settings: user specified IP address is supported only
+        #   when connecting to networks with user configured subnets
+        #
+        # 选 172.28 段是为了避开 daemon.json 里 default-address-pools 的 10.255.0.0/16，
+        # 若与你网络环境中的其他网段冲突，改成任意未被占用的私有段即可。
+        - subnet: 172.28.0.0/24
+
 # 关于路径里的 server 子目录：
 # 这些是**服务器上**的相对路径，相对于本文件所在的部署目录，与本仓库的结构无关。
 # 目录名沿用最初从主仓库部署时的布局（<部署目录>/server/{data,logs,uploads,config,mysql,.env}）。
