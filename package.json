@@ -3,9 +3,11 @@
   "version": "0.6.2",
   "private": true,
   "scripts": {
-    "dev": "ts-node -r dotenv/config src/index.ts",
+    "dev": "ts-node -r dotenv/config src/server.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node -r dotenv/config dist/server.js",
+    "db:init": "node -r dotenv/config dist/init_schema.js",
+    "test": "npm run build && node --test tests/*.test.js"
   },
   "dependencies": {
     "@types/multer": "^2.0.0",

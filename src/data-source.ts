@@ -38,25 +38,35 @@ if (isProduction && shouldSynchronize) {
     process.exit(1);
 }
 
-export const AppDataSource = new DataSource({
-    type: "mysql",
+export const entities = [
+    User,
+    Department,
+    Category,
+    EquipmentItem,
+    BorrowHistory,
+    BorrowRequest,
+    RegistrationRequest,
+    DeviceToken
+];
+
+/**
+ * 连接参数。首次建表的初始化脚本（init_schema.ts）会复用这一份，
+ * 免得两处各写一遍连接配置而逐渐漂移。
+ */
+export const connectionOptions = {
+    type: "mysql" as const,
     host: requireDbEnv("MYSQL_HOST", "localhost"),
     port: Number(process.env.MYSQL_PORT) || 3306,
     username: requireDbEnv("MYSQL_USER", "equiptrack_dev"),
     password: requireDbEnv("MYSQL_PASSWORD", ""),
     database: requireDbEnv("MYSQL_DATABASE", "EquipTrack"),
-    synchronize: shouldSynchronize,
     logging: false,
-    entities: [
-        User,
-        Department,
-        Category,
-        EquipmentItem,
-        BorrowHistory,
-        BorrowRequest,
-        RegistrationRequest,
-        DeviceToken
-    ],
+    entities,
+};
+
+export const AppDataSource = new DataSource({
+    ...connectionOptions,
+    synchronize: shouldSynchronize,
     migrations: [],
     subscribers: [],
 });
