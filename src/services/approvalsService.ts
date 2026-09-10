@@ -81,7 +81,7 @@ export async function approveRequest(
           departmentName: dept.name,
           role: "普通用户",
           status: "active",
-          password: hashPasswordIfNeeded(req.passwordHash || "123456"),
+          password: hashPasswordIfNeeded(req.passwordHash),
           invitationCode: req.invitationCode
       });
       await manager.save(newUser);

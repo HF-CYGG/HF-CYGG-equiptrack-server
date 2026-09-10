@@ -142,7 +142,8 @@ api.post("/signup", signupLimiter, async (req, res, next) => {
       departmentName: requireString(body.departmentName, "departmentName", { max: 64 }),
       invitationCode: requireString(body.invitationCode, "invitationCode", { max: 64 }),
       invitedByUserId: optionalString(body.invitedByUserId, "invitedByUserId", { max: 64 }),
-      password: optionalString(body.password, "password", { max: 128 }),
+      // 不再允许不带密码注册（此前会落到默认密码 123456）
+      password: requireString(body.password, "password", { min: 1, max: 128 }),
     };
     const result = await signup(payload);
     res.json(result);

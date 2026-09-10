@@ -1,5 +1,15 @@
 node_modules
 data
 logs
+uploads
+mysql
 .env
 .git
+.venv
+
+# 密钥与运行时产物绝不能进构建上下文：
+# 即使多阶段构建的最终镜像不含它们，构建上下文、BuildKit 缓存与 CI 日志仍会暴露
+serviceAccountKey.json
+*.log
+*.zip
+dist

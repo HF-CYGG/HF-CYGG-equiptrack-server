@@ -41,11 +41,19 @@ export async function login(contact: string, pass: string): Promise<{ user: User
   const userRepo = AppDataSource.getRepository(User);
   const user = await userRepo.findOneBy({ contact });
 
-  if (!user) throw Object.assign(new Error("用户不存在"), { status: 404 });
-  if (!verifyPassword(user.password, pass)) {
-    throw Object.assign(new Error("密码错误"), { status: 401 });
-  }
+  // 用户不存在与密码错误必须返回同样的结果，否则可以枚举出有效账号
+  // （contact 同时是登录名）。对不存在的用户也跑一次同样开销的哈希，
+  // 消除响应时间上的差异。
+  const invalidCredentials = () =>
+    Object.assign(new Error("账号或密码错误"), { status: 401 });
 
+  if (!user) {
+    hashPassword(pass);
+    throw invalidCredentials();
+  }
+  if (!verifyPassword(user.password, pass)) {
+    throw invalidCredentials();
+  }
   if (!isHashedPassword(user.password)) {
     user.password = hashPassword(pass);
     await userRepo.save(user);
@@ -71,7 +79,7 @@ export async function signup(payload: {
   // In original code, it seems they input department name string for registration request.
   invitationCode: string;
   invitedByUserId?: string;
-  password?: string;
+  password: string;
 }): Promise<{ message: string; requestId: string }> {
   // Check if user exists
   const userRepo = AppDataSource.getRepository(User);
@@ -120,7 +128,7 @@ export async function signup(payload: {
     // 邀请人由邀请码反查得出，不采用请求体里自称的 invitedByUserId
     invitedByUserId: inviter.id,
     status: "pending",
-    passwordHash: hashPasswordIfNeeded(payload.password || "123456")
+    passwordHash: hashPasswordIfNeeded(payload.password)
   });
 
   await regRepo.save(request);
