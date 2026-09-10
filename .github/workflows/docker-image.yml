@@ -1,17 +1,17 @@
-name: docker-image
+name: build-check
 
+# PR 的构建验证。
+# 推送镜像与部署由 deploy.yml 负责（push 到 master 时触发），
+# 这里只确认改动能正常构建出镜像，不产生任何推送。
 on:
-  push:
-    branches: [ master ]
   pull_request:
     branches: [ master ]
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,33 +20,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Login to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # 阿里云 ACR 的镜像由 ACR 侧的「代码变更自动构建」直接从本仓库拉取构建，
-      # 这里不再重复推送；此处保留 Docker Hub 与 GHCR 作为备份来源。
-      # 生产部署使用的镜像由 EquipTrack 主仓库的 deploy 工作流推送到 ACR。
-      - name: Build and push image to Docker Hub and GHCR
+      - name: Build image (no push)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          # PR 只验证能否构建成功，不推送（来自 fork 的 PR 也拿不到 secrets）
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            yemiao351/equiptrack:latest
-            yemiao351/equiptrack:${{ github.sha }}
-            ghcr.io/hf-cygg/equiptrack-server:latest
-            ghcr.io/hf-cygg/equiptrack-server:${{ github.sha }}
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

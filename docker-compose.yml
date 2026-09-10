@@ -1,24 +1,49 @@
-version: "3.8"
-
 services:
-  equiptrack-server:
-    build:
-      context: .
-    image: yemiao351/equiptrack:latest
-    container_name: EquipTrackServer
+  mysql-server:
+    image: mysql:8.0
+    container_name: mysql-server
     restart: unless-stopped
-    ports:
-      - "13000:3000"
-    volumes:
-      - "/opt/equiptrack/data:/app/data"
-      - "/opt/equiptrack/uploads:/app/uploads"
     env_file:
-      - ./.env
+      - ./server/.env
+    ports:
+      # 只绑定回环地址：equiptrack-server 与 MySQL 在同一 Docker 网络内，靠服务名互通，
+      # 不需要把 3306 发布到公网。注意 Docker 的端口发布会绕过 UFW/firewalld 直接写 iptables，
+      # 写成 "3306:3306" 等于把数据库直接挂到公网上。
+      # 需要用客户端连库时走 SSH 隧道。
+      - "127.0.0.1:${MYSQL_PUBLISHED_PORT:-3306}:3306"
+    volumes:
+      - ./server/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  equiptrack-server:
+    # 镜像地址由 compose 同级目录下的 .env 提供，例如：
+    #   SERVER_IMAGE=crpi-xxxxxxxx.cn-qingdao.personal.cr.aliyuncs.com/<命名空间>/<仓库名>:latest
+    # 同地域的 ECS 建议改用控制台给出的专有网络地址（域名含 -vpc），免公网流量费且更快。
+    # CI 部署时会把这一行写进服务器上的 .env；本地手动起服务则需自行填写。
+    image: ${SERVER_IMAGE:?请在 .env 中设置 SERVER_IMAGE，指向 ACR 上的镜像地址}
+    container_name: equiptrack-server
+    restart: unless-stopped
+    depends_on:
+      mysql-server:
+        condition: service_healthy
+    env_file:
+      - ./server/.env
     environment:
       MYSQL_HOST: mysql-server
       MYSQL_PORT: 3306
-    networks:
-      - mysql-network
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./server/data:/app/data
+      - ./server/logs:/app/logs
+      - ./server/uploads:/app/uploads
+      - ./server/config:/app/config
+      - ./server/.env:/app/.env:ro
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
       interval: 30s
@@ -26,7 +51,13 @@ services:
       retries: 3
       start_period: 60s
 
-networks:
-  mysql-network:
-    external: true
-    name: ${MYSQL_DOCKER_NETWORK:-dpanel-c-mysql-server_default}
+# 关于路径里的 server 子目录：
+# 这些是**服务器上**的相对路径，相对于本文件所在的部署目录，与本仓库的结构无关。
+# 目录名沿用最初从主仓库部署时的布局（<部署目录>/server/{data,logs,uploads,config,mysql,.env}）。
+# 不要改动它：MySQL 的数据目录与初始化口令都落在 ./server/mysql 与 ./server/.env 里，
+# 换了路径会变成一个空库，而 .env 里的口令又对不上已有数据。
+#
+# 另外这里原本还有一个 watchtower 服务，每 60 秒自动拉取 :latest 并重启容器。
+# 它挂载了 /var/run/docker.sock（等价于把宿主机 root 权限交出去），又跟踪可变标签、
+# 没有 digest 固定与签名校验 —— 镜像仓库一旦被推入恶意 latest，一分钟内就会自动
+# 部署到宿主机。现已移除，改由 CI 在镜像推送完成后主动 SSH 部署。
