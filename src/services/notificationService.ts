@@ -29,24 +29,21 @@ try {
 
 export async function registerDeviceToken(userId: string, token: string, platform: 'android' | 'ios' | 'web' | string) {
   const repo = AppDataSource.getRepository(DeviceToken);
-  let tokenEntry = await repo.findOneBy({ token });
-  
-  if (tokenEntry) {
-    // Update existing
-    tokenEntry.userId = userId;
-    tokenEntry.updatedAt = new Date().toISOString();
-    await repo.save(tokenEntry);
-  } else {
-    // Add new
-    tokenEntry = repo.create({
-      userId,
+
+  // 用 upsert 而不是「先查再插」：客户端在冷启动、登录成功、FCM 刷新令牌
+  // 几个时机都会调这个接口，并发请求会同时查不到、同时 INSERT，
+  // 后一个直接撞主键报 ER_DUP_ENTRY。
+  // MySQL 下 TypeORM 会生成 INSERT ... ON DUPLICATE KEY UPDATE，天然幂等。
+  await repo.upsert(
+    {
       token,
+      userId,
       platform,
-      updatedAt: new Date().toISOString()
-    });
-    await repo.save(tokenEntry);
-  }
-  
+      updatedAt: new Date().toISOString(),
+    },
+    ["token"]
+  );
+
   console.log(`[Notification] Token registered for user ${userId}`);
 }
 
