@@ -1,6 +1,7 @@
 import { app } from "./app";
 import { env } from "./config/env";
 import { AppDataSource } from "./data-source";
+import { createSchemaIfEmpty } from "./init_schema";
 import { migrateJsonToSqlIfNeeded } from "./sync_json_to_sql";
 import { ensureDatabaseSchema } from "./utils/schema_fix";
 import { startDatabaseWatchdog } from "./database-watchdog";
@@ -65,6 +66,14 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 async function bootstrap() {
   await logBoot("server.ts: starting");
   await initializeDatabaseWithRetry();
+
+  // 全新部署时自动建表。只在库里一张表都没有的情况下触发，
+  // 已有数据的库不会被自动 DDL 碰到（那是 TYPEORM_SYNCHRONIZE 的做法，风险太大）。
+  const created = await createSchemaIfEmpty();
+  if (created) {
+    await logBoot("schema created on empty database");
+  }
+
   await ensureDatabaseSchema();
 
   try {

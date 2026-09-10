@@ -7,6 +7,7 @@
     "build": "tsc",
     "start": "node -r dotenv/config dist/server.js",
     "db:init": "node -r dotenv/config dist/init_schema.js",
+    "create-admin": "node -r dotenv/config dist/create_admin.js",
     "test": "npm run build && node --test tests/*.test.js"
   },
   "dependencies": {

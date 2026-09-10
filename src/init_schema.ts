@@ -1,39 +1,56 @@
 import "reflect-metadata";
-import { DataSource } from "typeorm";
-import { connectionOptions } from "./data-source";
+import { AppDataSource } from "./data-source";
 
 /**
- * 首次部署时创建表结构。
+ * 表结构初始化。
  *
- * 为什么需要单独一个脚本：
- * - 服务进程启动时禁止开启 TYPEORM_SYNCHRONIZE，自动 DDL 会在实体变动时
- *   直接改表甚至删列，不能挂在每次启动的路径上；
- * - 而 utils/schema_fix.ts 只负责给已有的表补列，不会建表。
+ * 这里刻意区分两种场景：
  *
- * 于是把「建表」收敛成一个需要人工执行一次的动作：
- *   docker compose exec equiptrack-server npm run db:init
+ * 1. 服务启动时（createSchemaIfEmpty）——只有在库里一张表都没有的情况下才建表。
+ *    这样全新部署可以开箱即用，而已经有数据的库永远不会被自动 DDL 碰到。
+ *    这也是不能直接开 TYPEORM_SYNCHRONIZE 的原因：那个开关会在实体变动时
+ *    去改甚至删已有表的列，挂在每次启动的路径上风险太大。
  *
- * 它对已存在的表是幂等的（TypeORM 只补齐缺失的表和列），
- * 但仍建议在已有数据的库上执行前先备份。
+ * 2. 手工执行（npm run db:init）——无条件同步一次，用于新增实体或字段后
+ *    把表结构补齐。幂等，但在有数据的库上执行前应先备份。
  */
-async function main() {
-  const dataSource = new DataSource({
-    ...connectionOptions,
-    synchronize: true,
-    migrations: [],
-    subscribers: [],
-  });
 
-  console.log(`正在连接数据库 ${connectionOptions.host}:${connectionOptions.port}/${connectionOptions.database} ...`);
-  await dataSource.initialize();
-
-  const tables = await dataSource.query("SHOW TABLES");
-  console.log(`表结构同步完成，当前共 ${tables.length} 张表。`);
-
-  await dataSource.destroy();
+/** 统计当前库里的表数量 */
+async function countTables(): Promise<number> {
+  const rows = await AppDataSource.query("SHOW TABLES");
+  return Array.isArray(rows) ? rows.length : 0;
 }
 
-main().catch((err) => {
-  console.error("表结构初始化失败：", err);
-  process.exit(1);
-});
+/**
+ * 空库时建表。返回是否实际执行了建表。
+ * 要求 AppDataSource 已经 initialize。
+ */
+export async function createSchemaIfEmpty(): Promise<boolean> {
+  const existing = await countTables();
+  if (existing > 0) return false;
+
+  console.log("[Schema] 检测到空数据库，正在创建表结构...");
+  await AppDataSource.synchronize();
+  console.log(`[Schema] 表结构创建完成，共 ${await countTables()} 张表。`);
+  return true;
+}
+
+/** 手工执行入口：无条件同步表结构 */
+async function main() {
+  await AppDataSource.initialize();
+
+  const before = await countTables();
+  console.log(`同步前共 ${before} 张表，正在同步表结构...`);
+
+  await AppDataSource.synchronize();
+
+  console.log(`同步完成，当前共 ${await countTables()} 张表。`);
+  await AppDataSource.destroy();
+}
+
+if (require.main === module) {
+  main().catch(async (err) => {
+    console.error("表结构初始化失败：", err);
+    process.exit(1);
+  });
+}
