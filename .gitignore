@@ -5,6 +5,7 @@ dist
 data
 logs
 uploads
+mysql
 coverage
 *.log
 *.zip

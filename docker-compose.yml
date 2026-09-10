@@ -2,27 +2,31 @@ version: "3.8"
 
 services:
   equiptrack-server:
+    build:
+      context: .
     image: yemiao351/equiptrack:latest
-    container_name: equiptrack-server
+    container_name: EquipTrackServer
     restart: unless-stopped
     ports:
       - "13000:3000"
     volumes:
       - "/opt/equiptrack/data:/app/data"
       - "/opt/equiptrack/uploads:/app/uploads"
+    env_file:
+      - ./.env
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      PORT: ${PORT:-3000}
-      JWT_SECRET: ${JWT_SECRET:-equiptrack-dev-secret}
-      CORS_ORIGIN: ${CORS_ORIGIN:-*}
-      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
-      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-200}
-      MYSQL_HOST: ${MYSQL_HOST:-mysql-server}
-      MYSQL_PORT: ${MYSQL_PORT:-3306}
-      MYSQL_USER: ${MYSQL_USER:-equiptrack_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-strong_password}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-EquipTrack}
-      TYPEORM_SYNCHRONIZE: ${TYPEORM_SYNCHRONIZE:-true}
-      DB_SYNCHRONIZE: ${DB_SYNCHRONIZE:-true}
-      FIREBASE_CREDENTIALS: ${FIREBASE_CREDENTIALS:-}
-      ALLOW_PLAINTEXT_PASSWORDS: ${ALLOW_PLAINTEXT_PASSWORDS:-true}
+      MYSQL_HOST: mysql-server
+      MYSQL_PORT: 3306
+    networks:
+      - mysql-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  mysql-network:
+    external: true
+    name: ${MYSQL_DOCKER_NETWORK:-dpanel-c-mysql-server_default}
