@@ -85,6 +85,31 @@ export async function signup(payload: {
       throw Object.assign(new Error("您的注册申请正在审核中，请勿重复提交"), { status: 400 });
   }
 
+  // 校验邀请码。此前它只是被原样存进注册申请，全代码库没有任何一处比对，
+  // 于是任何人填任意字符串都能提交申请；而 invitedByUserId 同样来自未认证的
+  // 请求体，「高级用户」正是靠这个字段获得审批权，等于可以自行制造下属账号。
+  const inviter = await userRepo.findOneBy({ invitationCode: payload.invitationCode });
+  if (!inviter) {
+    throw Object.assign(new Error("邀请码无效"), { status: 400 });
+  }
+
+  const inviterCanInvite =
+    inviter.role === "超级管理员" || inviter.role === "管理员" || inviter.role === "高级用户";
+  if (!inviterCanInvite || (inviter.status && inviter.status !== "active")) {
+    throw Object.assign(new Error("邀请码无效"), { status: 400 });
+  }
+
+  // 除超级管理员外，邀请码只能用于邀请人自己所在的部门
+  if (inviter.role !== "超级管理员") {
+    const inviterDept = await AppDataSource.getRepository(Department).findOneBy({
+      id: inviter.departmentId,
+    });
+    if (!inviterDept || inviterDept.name !== payload.departmentName) {
+      throw Object.assign(new Error("邀请码与所选部门不匹配"), { status: 400 });
+    }
+  }
+
+
   const requestId = generateId("reg");
   const request = regRepo.create({
     id: requestId,
@@ -92,7 +117,8 @@ export async function signup(payload: {
     contact: payload.contact,
     departmentName: payload.departmentName,
     invitationCode: payload.invitationCode,
-    invitedByUserId: payload.invitedByUserId,
+    // 邀请人由邀请码反查得出，不采用请求体里自称的 invitedByUserId
+    invitedByUserId: inviter.id,
     status: "pending",
     passwordHash: hashPasswordIfNeeded(payload.password || "123456")
   });

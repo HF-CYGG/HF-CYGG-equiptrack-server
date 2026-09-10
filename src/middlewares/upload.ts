@@ -1,6 +1,7 @@
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
 // Define base uploads directory
 const baseUploadDir = path.join(process.cwd(), "uploads");
@@ -47,7 +48,8 @@ const storage = multer.diskStorage({
     cb(null, subfolder);
   },
   filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    // 用密码学安全的随机数，Math.random 的随机位数有限且可预测
+    const uniqueSuffix = `${Date.now()}-${crypto.randomBytes(16).toString("hex")}`;
     cb(null, uniqueSuffix + path.extname(file.originalname));
   },
 });

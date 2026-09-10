@@ -124,7 +124,10 @@ api.post("/login", loginLimiter, async (req, res, next) => {
     const contact = requireString(body.contact, "contact", { max: 64 });
     const password = requireString(body.password, "password", { min: 1, max: 128 });
     const { user, token } = await login(contact, password);
-    res.json({ user, token });
+    // 登录响应此前把整个用户实体回传，其中带有密码与邀请码。
+    // 其余用户接口都做了剥离，这里补齐。
+    const { password: _pw, invitationCode: _code, ...safeUser } = user;
+    res.json({ user: safeUser, token });
   } catch (err) {
     next(err);
   }
@@ -371,7 +374,37 @@ api.get("/items", async (req, res, next) => {
 
 api.get("/items/:id", async (req, res, next) => {
   try {
-    res.json(await getItem(req.params.id));
+    const actor = (req as any).user;
+    const item = await getItem(req.params.id);
+
+    // 物资详情会带出完整借还记录（借用人姓名、手机号、经办人）。
+    // 此前对任何登录用户开放，等于跨部门泄露通讯录，也为伪造归还提供了记录 id。
+    const canSeeBorrowerDetails =
+      isSuperAdmin(actor?.role) ||
+      ((actor?.role === "管理员" || actor?.role === "高级用户") &&
+        canOperateDepartment(actor, item.departmentId));
+
+    if (canSeeBorrowerDetails) {
+      res.json(item);
+      return;
+    }
+
+    const maskContact = (person: any) => (person ? { ...person, phone: undefined } : person);
+
+    const borrowHistory = (item.borrowHistory || []).map((entry: any) => {
+      const isMine =
+        (entry.borrower?.id && entry.borrower.id === actor?.id) ||
+        (!!actor?.contact && entry.borrower?.phone === actor.contact);
+
+      if (isMine) return entry;
+      return {
+        ...entry,
+        borrower: maskContact(entry.borrower),
+        operator: maskContact(entry.operator),
+      };
+    });
+
+    res.json({ ...item, borrowHistory });
   } catch (err) {
     next(err);
   }
@@ -621,8 +654,25 @@ api.get("/users", async (req, res, next) => {
 
 api.get("/users/:id", async (req, res, next) => {
   try {
-    const { password, ...u } = await getUser(req.params.id);
-    res.json(u);
+    const actor = (req as any).user;
+    const { password, ...target } = await getUser(req.params.id);
+
+    // 此前任何登录用户都能读到任意用户的完整档案，包括手机号（同时是登录名）
+    // 与邀请码。这里限制为：本人、本部门的管理者、超级管理员才看完整档案，
+    // 其他人只拿到界面展示所需的最小字段。
+    const canSeeFullProfile =
+      actor?.id === target.id ||
+      isSuperAdmin(actor?.role) ||
+      ((actor?.role === "管理员" || actor?.role === "高级用户") &&
+        canOperateDepartment(actor, target.departmentId));
+
+    if (canSeeFullProfile) {
+      res.json(target);
+      return;
+    }
+
+    const { invitationCode, banReason, contact, status, ...publicProfile } = target;
+    res.json(publicProfile);
   } catch (err) {
     next(err);
   }
@@ -822,10 +872,17 @@ api.get("/history", async (req, res, next) => {
         // 普通用户：通过 JSON 字段过滤
         // 注意：使用原生 SQL 提取 JSON
         if (userId) {
-             query.where(
-                "(JSON_EXTRACT(history.borrower, '$.id') = :userId OR JSON_EXTRACT(history.borrower, '$.phone') = :contact)",
-                { userId, contact: userContact }
-            );
+             const conditions = ["JSON_EXTRACT(history.borrower, '$.id') = :userId"];
+             const params: Record<string, unknown> = { userId };
+
+             // contact 为空时绝不能参与匹配：那样条件会退化成 phone = ''，
+             // 把所有借用人手机号为空的他人记录都算成当前用户的
+             if (userContact) {
+                 conditions.push("JSON_EXTRACT(history.borrower, '$.phone') = :contact");
+                 params.contact = userContact;
+             }
+
+             query.where(`(${conditions.join(" OR ")})`, params);
         } else {
              return res.json([]);
         }

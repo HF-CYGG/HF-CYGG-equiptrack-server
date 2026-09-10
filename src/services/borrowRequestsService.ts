@@ -220,7 +220,12 @@ export async function approveBorrowRequest(payload: {
   const reqRepo = AppDataSource.getRepository(BorrowRequest);
   
   return AppDataSource.transaction(async manager => {
-      const req = await manager.findOne(BorrowRequest, { where: { id: payload.requestId } });
+      // 悲观写锁：两个并发的审批请求会同时读到 pending 状态，
+      // 各自执行一次扣库存，最后都写成 approved
+      const req = await manager.findOne(BorrowRequest, {
+        where: { id: payload.requestId },
+        lock: { mode: "pessimistic_write" },
+      });
       if (!req) throw Object.assign(new Error("Request not found"), { status: 404 });
 
       if (req.status !== "pending") {
@@ -236,12 +241,8 @@ export async function approveBorrowRequest(payload: {
         }
       }
 
-      // Perform borrow action
-      // Note: borrowItem uses its own transaction. 
-      // We are calling it from here. If it fails, this transaction will fail/rollback?
-      // No, borrowItem transaction is separate. 
-      // Ideally we should pass 'manager' to borrowItem.
-      // But let's assume it works.
+      // 扣库存并入当前事务：此前 borrowItem 另开事务，一旦后续的状态更新失败，
+      // 就会出现「库存已扣、申请仍是 pending」的状态，可被再次审批重复扣减
       await borrowItem(req.itemId, {
         borrower: req.borrower,
         operator: payload.reviewer,
@@ -250,7 +251,7 @@ export async function approveBorrowRequest(payload: {
         quantity: req.quantity,
         remark: payload.remark,
         note: req.note
-      });
+      }, manager);
 
       // Update request
       req.status = "approved";

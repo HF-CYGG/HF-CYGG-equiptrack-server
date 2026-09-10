@@ -7,7 +7,7 @@ import { generateId } from "../utils/store";
 import type { BorrowerInfo, UserRole } from "../models/types";
 import fs from "fs";
 import path from "path";
-import { In } from "typeorm";
+import { In, EntityManager } from "typeorm";
 
 export async function listItems(): Promise<EquipmentItem[]> {
   const itemRepo = AppDataSource.getRepository(EquipmentItem);
@@ -178,18 +178,24 @@ export async function deleteItem(id: string): Promise<{ message: string }> {
 
 export async function borrowItem(
   id: string,
-  payload: { borrower: BorrowerInfo; operator?: BorrowerInfo; expectedReturnDate: string; photo?: string; quantity?: number; remark?: string; note?: string }
+  payload: { borrower: BorrowerInfo; operator?: BorrowerInfo; expectedReturnDate: string; photo?: string; quantity?: number; remark?: string; note?: string },
+  externalManager?: EntityManager
 ): Promise<EquipmentItem> {
-  return AppDataSource.transaction(async transactionalEntityManager => {
-      const itemRepo = transactionalEntityManager.getRepository(EquipmentItem);
-      const histRepo = transactionalEntityManager.getRepository(BorrowHistory);
-      
-      const item = await itemRepo.findOne({ where: { id } }); // Removed relations: ["borrowHistory"]
-      
+  const run = async (manager: EntityManager) => {
+      const itemRepo = manager.getRepository(EquipmentItem);
+      const histRepo = manager.getRepository(BorrowHistory);
+
+      // 悲观写锁：并发的借用/审批会同时读到同一个 availableQuantity，
+      // 各自减去自己的数量后回写，导致超发甚至扣成负数。
+      const item = await itemRepo.findOne({
+        where: { id },
+        lock: { mode: "pessimistic_write" },
+      });
+
       if (!item) throw Object.assign(new Error("Item not found"), { status: 404 });
-      
+
       const quantity = payload.quantity && payload.quantity > 0 ? Math.floor(payload.quantity) : 1;
-      
+
       // Check against RAW available quantity
       if (item.availableQuantity < quantity) {
         throw Object.assign(new Error("No available quantity"), { status: 400 });
@@ -209,18 +215,21 @@ export async function borrowItem(
         history.photo = payload.photo;
         history.remark = payload.remark;
         history.note = payload.note;
-        
+
         histories.push(history);
       }
-      
+
       // Bulk save history
       await histRepo.save(histories);
-      
+
       item.availableQuantity -= quantity;
-      
+
       await itemRepo.save(item);
       return item;
-  });
+  };
+
+  // 审批流程调用时复用外层事务，保证「扣库存」与「改申请状态」同成功同回滚
+  return externalManager ? run(externalManager) : AppDataSource.transaction(run);
 }
 
 export async function returnItem(
