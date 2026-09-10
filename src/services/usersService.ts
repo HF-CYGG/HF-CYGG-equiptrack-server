@@ -5,6 +5,7 @@ import { generateId } from "../utils/store";
 import type { UserRole } from "../models/types";
 import { Like } from "typeorm";
 import { hashPasswordIfNeeded } from "./authService";
+import { invalidateAuthCache } from "../middlewares/auth";
 
 export async function listUsers(query?: string): Promise<User[]> {
   const userRepo = AppDataSource.getRepository(User);
@@ -52,6 +53,8 @@ export async function updateUser(id: string, input: Partial<User>): Promise<User
 
   userRepo.merge(user, input);
   await userRepo.save(user);
+  // 角色/部门/状态可能已变更，立即失效该用户的身份缓存
+  invalidateAuthCache(id);
   return user;
 }
 
@@ -59,6 +62,7 @@ export async function deleteUser(id: string): Promise<{ message: string }> {
   const userRepo = AppDataSource.getRepository(User);
   const result = await userRepo.delete(id);
   if (result.affected === 0) throw Object.assign(new Error("User not found"), { status: 404 });
+  invalidateAuthCache(id);
   return { message: "User deleted" };
 }
 

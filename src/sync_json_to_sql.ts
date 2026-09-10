@@ -7,6 +7,7 @@ import { BorrowRequest } from "./entities/BorrowRequest";
 import { RegistrationRequest } from "./entities/RegistrationRequest";
 import { DeviceToken } from "./entities/DeviceToken";
 import { readAll } from "./utils/store";
+import { hashPasswordIfNeeded } from "./services/authService";
 import { BorrowHistory } from "./entities/BorrowHistory";
 import { promises as fs } from "fs";
 import path from "path";
@@ -76,12 +77,15 @@ export async function migrateJsonToSqlIfNeeded(): Promise<void> {
     console.log(`[JSON→SQL] Migrated ${cats.length} categories.`);
 
     for (const u of users) {
+        // 历史 JSON 中的密码可能是明文，迁移时统一哈希，避免明文落库
+        u.password = hashPasswordIfNeeded(u.password || "");
         await userRepo.save(u);
     }
     console.log(`[JSON→SQL] Migrated ${users.length} users.`);
 
     const regRepo = AppDataSource.getRepository(RegistrationRequest);
     for (const r of regs) {
+        r.passwordHash = hashPasswordIfNeeded(r.passwordHash || "");
         await regRepo.save(r);
     }
     console.log(`[JSON→SQL] Migrated ${regs.length} registration requests.`);

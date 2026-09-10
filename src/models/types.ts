@@ -117,4 +117,8 @@ export interface AppVersion {
   downloadUrl: string;
   forceUpdate: boolean;
   releaseDate: string;
+  updateType?: string;
+  // 安装包 SHA-256 摘要（十六进制）。下发后客户端会在安装前逐字节校验，
+  // 与客户端的签名校验共同防止安装包在传输或落盘后被替换。
+  sha256?: string;
 }

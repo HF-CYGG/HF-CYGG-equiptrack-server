@@ -34,7 +34,6 @@ export function verifyPassword(stored: string, provided: string): boolean {
 }
 
 export function hashPasswordIfNeeded(value: string): string {
-  if (env.ALLOW_PLAINTEXT_PASSWORDS) return value;
   return isHashedPassword(value) ? value : hashPassword(value);
 }
 
@@ -47,12 +46,12 @@ export async function login(contact: string, pass: string): Promise<{ user: User
     throw Object.assign(new Error("密码错误"), { status: 401 });
   }
 
-  if (!env.ALLOW_PLAINTEXT_PASSWORDS && !isHashedPassword(user.password)) {
+  if (!isHashedPassword(user.password)) {
     user.password = hashPassword(pass);
     await userRepo.save(user);
   }
   
-  if (user.status === "disabled") {
+  if (user.status && user.status !== "active") {
       throw Object.assign(new Error("账户已被禁用"), { status: 403 });
   }
 
